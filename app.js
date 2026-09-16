@@ -566,10 +566,16 @@
       .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5.5pt; }
       .upd-items { margin-top: 0; }
       .upd-items th, .upd-items td { border-width: 0.5px; padding: 0.8mm 0.7mm; font-size: 5pt; line-height: 1.06; overflow-wrap: anywhere; }
-      .upd-items thead th { text-align: center; vertical-align: middle; font-size: 4.8pt; line-height: 1; font-weight: 700; }
+      .upd-items th { overflow-wrap: normal; word-break: normal; hyphens: manual; }
+      .upd-items thead th { text-align: center; vertical-align: middle; font-size: 4.55pt; line-height: 0.96; font-weight: 700; }
+      .upd-items .upd-header-main > th:nth-child(8),
+      .upd-items .upd-header-main > th:nth-child(11),
+      .upd-items .upd-header-main > th:nth-child(12),
+      .upd-items .upd-header-main > th:nth-child(16),
+      .upd-items .upd-header-main > th:nth-child(17) { font-size: 4.2pt; line-height: 0.94; padding-left: 0.35mm; padding-right: 0.35mm; }
       .upd-items .upd-header-main > th:nth-child(14) { font-size: 4.25pt; }
       .upd-items .upd-header-main > th:nth-child(15) { font-size: 4.35pt; }
-      .upd-items .upd-header-sub > th { font-size: 4.45pt; }
+      .upd-items .upd-header-sub > th { font-size: 4.35pt; line-height: 0.95; }
       .upd-items .upd-header-main > th { height: 21.7mm; min-height: 21.7mm; }
       .upd-items .upd-header-sub > th { height: 26.2mm; min-height: 26.2mm; }
       .upd-items .code-row th, .upd-items .code-row td { height: 4.5mm; font-size: 5.2pt; text-align: center; vertical-align: middle; font-weight: 700; }
@@ -778,13 +784,13 @@
               <th rowspan="2">Количе-<br>ство<br>(объем)</th><th rowspan="2">Цена<br>(тариф)<br>за единицу<br>измерения</th>
               <th rowspan="2">Стоимость товаров<br>(работ, услуг),<br>имущественных прав<br>без налога - всего</th>
               <th rowspan="2">В том<br>числе<br>сумма<br>акциза</th><th rowspan="2">Налоговая<br>ставка</th>
-              <th rowspan="2">Сумма налога,<br>предъявляемая<br>покупателю</th>
+              <th rowspan="2">Сумма<br>налога,<br>предъявляе&shy;мая<br>покупателю</th>
               <th rowspan="2">Стоимость товаров<br>(работ, услуг),<br>имущественных прав<br>с налогом - всего</th>
               <th colspan="2">Страна происхождения<br>товара</th>
-              <th rowspan="2">Регистрационный<br>номер декларации<br>на товары или<br>регистрационный<br>номер партии товара,<br>подлежащего<br>прослеживаемости</th>
+              <th rowspan="2">Регистрационный<br>номер декларации<br>на товары или<br>регистрационный<br>номер партии<br>товара,<br>подлежащего<br>прослеживае&shy;мости</th>
               <th colspan="2">Единица<br>измерения товара,<br>используемая<br>в целях осуществления<br>прослеживаемости</th>
-              <th rowspan="2">Количество товара,<br>подлежащего<br>прослеживаемости</th>
-              <th rowspan="2">Стоимость товара,<br>подлежащего<br>прослеживаемости,<br>без НДС</th>
+              <th rowspan="2">Количество товара,<br>подлежащего<br>прослеживае&shy;мости</th>
+              <th rowspan="2">Стоимость товара,<br>подлежащего<br>прослеживае&shy;мости,<br>без НДС</th>
             </tr>
             <tr class="upd-header-sub">
               <th>код</th><th>услов-<br>ное<br>обозна-<br>чение<br>(нацио-<br>наль-<br>ное)</th>
