@@ -548,7 +548,7 @@
       .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: stretch; }
       .doc-page.landscape.upd { height: 210mm; min-height: 0; overflow: hidden; }
       .pdf-render .doc-page.landscape.upd { height: 209.5mm; }
-      .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 0.5px solid #111; }
+      .upd-side { min-height: 63mm; margin-bottom: -1px; padding: 1mm 2mm 0 1mm; border-right: 1px solid #111; }
       .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
       .upd-status { display: inline-grid; place-items: center; width: 7mm; height: 5.5mm; margin-left: 2mm; border: 1px solid #111; font-size: 8pt; font-weight: 700; }
       .upd-legend { margin-top: 5mm; }
