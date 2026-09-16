@@ -509,7 +509,12 @@
       .upd-items .item-row td { height: 18mm; vertical-align: middle; }
       .upd-items .total-row td { height: 8mm; vertical-align: middle; font-weight: 700; }
       .upd-transfer-page { font-size: 5.8pt; line-height: 1.08; padding-top: 0; }
-      .upd-transfer-head { margin-left: 24.3mm; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; min-height: 20mm; padding: 4mm 0 0 4mm; display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+      .upd-transfer-head { margin-left: 24.3mm; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; min-height: 22mm; padding: 4mm 0 2mm 4mm; }
+      .upd-sign-grid { display: grid; grid-template-columns: 48mm 1.5mm 53.7mm 73.3mm 3.3mm 43mm 1.2mm 17.2mm 14.4mm; row-gap: 3mm; align-items: end; }
+      .upd-sign-label { align-self: center; font-size: 5.8pt; font-weight: 700; }
+      .upd-sign-field { position: relative; min-height: 4mm; border-bottom: 1px solid #111; text-align: center; }
+      .upd-sign-field span { display: block; min-height: 3.5mm; }
+      .upd-sign-field small { position: absolute; top: 4.2mm; left: 0; right: 0; font-size: 4.4pt; font-weight: 400; line-height: 1; }
       .line-label { font-weight: 700; }
       .transfer-line { display: grid; grid-template-columns: 68mm 1fr 9mm; align-items: end; min-height: 7.2mm; }
       .transfer-line .value { border-bottom: 1px solid #111; min-height: 4mm; text-align: center; }
@@ -722,19 +727,17 @@
       </main>
       <main class="doc-page landscape upd upd-transfer-page">
         <section class="upd-transfer-head">
-          <div>
-            <div><b>Руководитель организации<br>или иное уполномоченное лицо</b></div>
-            <div class="transfer-hint" style="margin-top:4mm">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________</div>
-            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)</div>
-            <div style="margin-top:4mm"><b>Индивидуальный предприниматель<br>или иное уполномоченное лицо</b></div>
-            <div class="transfer-hint">${html(sellerSigner)}</div>
-            <div class="transfer-hint">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${html(registrationDetails)}</div>
-            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(реквизиты свидетельства о государственной регистрации индивидуального предпринимателя)</div>
-          </div>
-          <div>
-            <div><b>Главный бухгалтер<br>или иное уполномоченное лицо</b></div>
-            <div class="transfer-hint" style="margin-top:4mm">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________</div>
-            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)</div>
+          <div class="upd-sign-grid">
+            <div class="upd-sign-label" style="grid-column:1;grid-row:1">Руководитель организации<br>или иное уполномоченное лицо</div>
+            <div class="upd-sign-field" style="grid-column:3;grid-row:1"><span></span><small>(подпись)</small></div>
+            <div class="upd-sign-field" style="grid-column:4;grid-row:1"><span></span><small>(ф.и.о.)</small></div>
+            <div class="upd-sign-label" style="grid-column:6;grid-row:1">Главный бухгалтер<br>или иное уполномоченное лицо</div>
+            <div class="upd-sign-field" style="grid-column:8;grid-row:1"><span></span><small>(подпись)</small></div>
+            <div class="upd-sign-field" style="grid-column:9;grid-row:1"><span></span><small>(ф.и.о.)</small></div>
+            <div class="upd-sign-label" style="grid-column:1;grid-row:2">Индивидуальный предприниматель<br>или иное уполномоченное лицо</div>
+            <div class="upd-sign-field" style="grid-column:3;grid-row:2"><span></span><small>(подпись)</small></div>
+            <div class="upd-sign-field" style="grid-column:4;grid-row:2"><span>${html(sellerSigner)}</span><small>(ф.и.о.)</small></div>
+            <div class="upd-sign-field" style="grid-column:5 / 10;grid-row:2"><span>${html(registrationDetails)}</span><small>(реквизиты свидетельства о государственной регистрации индивидуального предпринимателя)</small></div>
           </div>
         </section>
         <div class="transfer-line"><span class="line-label">Основание передачи (сдачи) / получения (приемки)</span><span class="value">${html(documentBasis(work))}</span><span class="upd-code">(10)</span></div>
