@@ -448,14 +448,20 @@
     `
       )
       .join('');
-  const printableShell = (title, body, layout = 'portrait') => `<!doctype html>
+  const printableShell = (title, body, layout = 'portrait') => {
+    const pageSize = layout === 'landscape' ? '297mm 210mm' : '210mm 297mm';
+    const pageWidth = layout === 'landscape' ? '297mm' : '210mm';
+    const pageHeight = layout === 'landscape' ? '210mm' : '297mm';
+
+    return `<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
     <title>${html(title)}</title>
     <style>
-      @page { size: A4 ${layout}; margin: 0; }
+      @page { size: ${pageSize}; margin: 0; }
       * { box-sizing: border-box; }
+      html, body { width: ${pageWidth}; min-width: ${pageWidth}; min-height: ${pageHeight}; }
       body { margin: 0; color: #111; background: #fff; font: 10pt/1.28 Arial, sans-serif; }
       h1, h2, h3, p { margin: 0; }
       .no-print { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 8px; background: #fff; border-bottom: 1px solid #ddd; }
@@ -525,7 +531,9 @@
       .mini-line .value { border-bottom: 1px solid #111; min-height: 4mm; text-align: center; }
       .stamp { margin-top: 2mm; text-align: center; }
       @media print {
+        @page { size: ${pageSize}; margin: 0; }
         .no-print { display: none; }
+        html, body { width: ${pageWidth}; min-width: ${pageWidth}; min-height: ${pageHeight}; }
         body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
       }
     </style>
@@ -536,6 +544,7 @@
     <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
   </body>
 </html>`;
+  };
   const invoiceDocument = (work, organization, client) => {
     const total = totalWorkAmount(work.items);
     const signer = signerName(organization);
