@@ -545,7 +545,7 @@
       .sign-grid > div + div { border-left: 1px solid #111; }
       .sign-row { margin-top: 8mm; }
       .upd { font-size: 6.1pt; line-height: 1.08; }
-      .upd-top { position: relative; display: grid; grid-template-columns: 24.4mm 1fr; align-items: stretch; }
+      .upd-top { position: relative; display: grid; grid-template-columns: 24.5mm 1fr; align-items: stretch; }
       .doc-page.landscape.upd { height: 210mm; min-height: 0; overflow: hidden; }
       .pdf-render .doc-page.landscape.upd { height: 209.5mm; }
       .upd-side { min-height: 63mm; margin-bottom: -0.5px; padding: 1mm 2mm 0 1mm; border-right: 0.5px solid #111; }
