@@ -505,7 +505,7 @@
       .upd-items { margin-top: 0; }
       .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 4.6pt; line-height: 1.03; overflow-wrap: anywhere; }
       .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
-      .upd-items .code-row th { height: 4mm; }
+      .upd-items .code-row th, .upd-items .code-row td { height: 4mm; text-align: center; vertical-align: middle; font-weight: 700; }
       .upd-items .item-row td { height: 18mm; vertical-align: middle; }
       .upd-items .total-row td { height: 8mm; vertical-align: middle; font-weight: 700; }
       .upd-transfer-page { font-size: 5.8pt; line-height: 1.08; padding-top: 0; }
@@ -712,9 +712,9 @@
               <th>цифровой<br>код</th><th>краткое<br>наиме-<br>нование</th>
               <th>код</th><th>условное<br>обозначение</th>
             </tr>
-            <tr class="code-row">${updCodes.map((code) => `<th>${html(code)}</th>`).join('')}</tr>
           </thead>
           <tbody>
+            <tr class="code-row">${updCodes.map((code) => `<td>${html(code)}</td>`).join('')}</tr>
             ${updItemRows}
             <tr class="total-row"><td></td><td colspan="7" class="center">Всего к оплате (9)</td><td class="right">${formatMoney(total)}</td><td class="center">Х</td><td class="center">Х</td><td class="center">без<br>НДС</td><td class="right">${formatMoney(total)}</td><td colspan="7"></td></tr>
           </tbody>
