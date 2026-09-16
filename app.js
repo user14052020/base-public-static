@@ -558,7 +558,7 @@
       .upd-value { min-height: 3mm; border-bottom: 1px solid #111; padding-left: 1mm; }
       .upd-code { text-align: right; }
       .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5.5pt; }
-      .upd-items { margin-top: 12.8mm; }
+      .upd-items { margin-top: 0; }
       .upd-items th, .upd-items td { border-width: 0.5px; padding: 0.8mm 0.7mm; font-size: 5pt; line-height: 1.06; overflow-wrap: anywhere; }
       .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
       .upd-items .upd-header-main > th { height: 21.7mm; min-height: 21.7mm; }
@@ -836,8 +836,7 @@
         </section>
         <div class="upd-footer"><span>Номер документа: ${html(invoiceNumber)}</span><span>2 / 2</span><span></span></div>
       </main>`,
-      'landscape',
-      { pdf: true }
+      'landscape'
     );
   };
   const openPrintDocument = (kind, workId) => {
