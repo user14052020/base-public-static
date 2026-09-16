@@ -143,6 +143,7 @@
     const amount = items.reduce((sum, item) => sum + item.amount, 0);
     const actDate = parseDate(work.actDate) || parseDate(work.invoiceDate) || new Date();
     const invoiceDate = parseDate(work.invoiceDate) || actDate;
+    const source = work.source === 'kwork' ? 'kwork' : 'document';
     return {
       ...work,
       _id: idOf(work._id) || uid(),
@@ -153,12 +154,12 @@
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
       isPayed: Boolean(work.isPayed),
       currency: work.currency || 'RUB',
-      source: work.source === 'kwork' ? 'kwork' : 'document',
-      sourceName: work.sourceName || (work.source === 'kwork' ? 'Kwork' : 'Счет/акт'),
+      source,
+      sourceName: work.sourceName || (source === 'kwork' ? 'Kwork' : 'Счет/акт'),
       platformCommission: Math.max(0, toNumber(work.platformCommission, 0)),
       payoutCommission: Math.max(0, toNumber(work.payoutCommission, 0)),
-      actNumber: String(work.actNumber || ''),
-      invoiceNumber: String(work.invoiceNumber || ''),
+      actNumber: source === 'kwork' ? '' : String(work.actNumber || ''),
+      invoiceNumber: source === 'kwork' ? '' : String(work.invoiceNumber || ''),
       actDate: actDate.toISOString(),
       invoiceDate: invoiceDate.toISOString(),
       actYear: actDate.getFullYear(),
@@ -229,12 +230,14 @@
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        return {
+        const normalized = {
           ...parsed,
           organizations: (parsed.organizations || []).map(normalizeOrganization),
           clients: (parsed.clients || []).map(normalizeClient),
           works: (parsed.works || []).map(normalizeWork)
         };
+        localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+        return normalized;
       } catch {
         localStorage.removeItem(DB_KEY);
       }
@@ -428,7 +431,10 @@
     const words = integerToWords(rubles);
     return `${words.charAt(0).toUpperCase()}${words.slice(1)} ${plural(rubles, ['рубль', 'рубля', 'рублей'])} ${String(kopecks).padStart(2, '0')} ${plural(kopecks, ['копейка', 'копейки', 'копеек'])}`;
   };
-  const documentsCell = (work) => `
+  const documentsCell = (work) =>
+    work.source === 'kwork'
+      ? '<span class="muted">—</span>'
+      : `
     <div class="doc-actions">
       <button class="secondary" data-action="print-doc" data-doc="act" data-id="${html(work._id)}">АКТ ${html(work.actNumber || '')}</button>
       <button class="secondary" data-action="print-doc" data-doc="invoice" data-id="${html(work._id)}">СЧЕТ ${html(work.invoiceNumber || '')}</button>
@@ -448,10 +454,53 @@
     `
       )
       .join('');
-  const printableShell = (title, body, layout = 'portrait') => {
-    const pageSize = layout === 'landscape' ? '297mm 210mm' : '210mm 297mm';
+  const printableShell = (title, body, layout = 'portrait', options = {}) => {
+    const pageSize = layout === 'landscape' ? 'A4 landscape' : 'A4 portrait';
     const pageWidth = layout === 'landscape' ? '297mm' : '210mm';
     const pageHeight = layout === 'landscape' ? '210mm' : '297mm';
+    const assetBase = new URL('.', window.location.href).href;
+    const filename = `${title}.pdf`;
+    const actionButton = options.pdf
+      ? '<button data-pdf-button onclick="generatePdf()">Скачать PDF</button>'
+      : '<button onclick="window.print()">Печать / сохранить PDF</button>';
+    const outputScript = options.pdf
+      ? `
+    <script src="${html(assetBase)}html2pdf.bundle.min.js"></script>
+    <script>
+      const pdfFilename = ${JSON.stringify(filename)};
+      const pdfLayout = ${JSON.stringify(layout)};
+      async function generatePdf() {
+        const button = document.querySelector('[data-pdf-button]');
+        if (button) {
+          button.disabled = true;
+          button.textContent = 'Готовлю PDF...';
+        }
+        try {
+          if (!window.html2pdf) {
+            window.print();
+            return;
+          }
+          await window.html2pdf()
+            .set({
+              filename: pdfFilename,
+              margin: 0,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
+              jsPDF: { unit: 'mm', format: 'a4', orientation: pdfLayout },
+              pagebreak: { mode: ['css', 'legacy'] }
+            })
+            .from(document.querySelector('[data-print-root]'))
+            .save();
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = 'Скачать PDF';
+          }
+        }
+      }
+      window.addEventListener('load', () => setTimeout(generatePdf, 300));
+    </script>`
+      : "<script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>";
 
     return `<!doctype html>
 <html lang="ru">
@@ -466,7 +515,7 @@
       h1, h2, h3, p { margin: 0; }
       .no-print { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 8px; background: #fff; border-bottom: 1px solid #ddd; }
       .no-print button { border: 1px solid #222; background: #222; color: #fff; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
-      .doc-page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 17mm 15mm; background: #fff; page-break-after: always; }
+      .doc-page { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 17mm 15mm; background: #fff; page-break-after: always; }
       .doc-page:last-child { page-break-after: auto; }
       .landscape { width: 297mm; min-height: 210mm; padding: 7mm 6.3mm 8mm; }
       .org-title { margin-bottom: 3mm; text-align: center; font-size: 16pt; font-weight: 700; white-space: nowrap; }
@@ -490,7 +539,7 @@
       .sign-grid > div { padding: 3mm; }
       .sign-grid > div + div { border-left: 1px solid #111; }
       .sign-row { margin-top: 8mm; }
-      .upd { font-size: 5.3pt; line-height: 1.05; }
+      .upd { font-size: 6.1pt; line-height: 1.08; }
       .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: start; }
       .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 1.5px solid #111; }
       .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
@@ -507,13 +556,19 @@
       .upd-line b { font-weight: 700; }
       .upd-value { min-height: 3mm; border-bottom: 1px solid #111; padding-left: 1mm; }
       .upd-code { text-align: right; }
-      .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5pt; }
-      .upd-items { margin-top: 0; }
-      .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 4.6pt; line-height: 1.03; overflow-wrap: anywhere; }
+      .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5.5pt; }
+      .upd-items { margin-top: 12.8mm; }
+      .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 5pt; line-height: 1.06; overflow-wrap: anywhere; }
       .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
-      .upd-items .code-row th, .upd-items .code-row td { height: 4mm; text-align: center; vertical-align: middle; font-weight: 700; }
-      .upd-items .item-row td { height: 18mm; vertical-align: middle; }
-      .upd-items .total-row td { height: 8mm; vertical-align: middle; font-weight: 700; }
+      .upd-items .upd-header-main > th { height: 21.7mm; min-height: 21.7mm; }
+      .upd-items .upd-header-sub > th { height: 26.2mm; min-height: 26.2mm; }
+      .upd-items .code-row th, .upd-items .code-row td { height: 4.5mm; font-size: 5.2pt; text-align: center; vertical-align: middle; font-weight: 700; }
+      .upd-items .item-row td { height: 19.1mm; vertical-align: middle; }
+      .upd-items .item-row td:nth-child(3) { font-size: 5.6pt; }
+      .upd-items .total-row td { height: 9mm; vertical-align: middle; font-weight: 700; }
+      .upd-footer { position: absolute; left: 6.3mm; right: 6.3mm; bottom: 6.5mm; display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 6pt; }
+      .upd-footer span:nth-child(2) { text-align: center; }
+      .upd-footer span:nth-child(3) { text-align: right; }
       .upd-transfer-page { font-size: 5.8pt; line-height: 1.08; padding-top: 0; }
       .upd-transfer-head { margin-left: 24.3mm; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; min-height: 22mm; padding: 4mm 0 2mm 4mm; }
       .upd-sign-grid { display: grid; grid-template-columns: 48mm 1.5mm 53.7mm 73.3mm 3.3mm 43mm 1.2mm 17.2mm 14.4mm; row-gap: 3mm; align-items: end; }
@@ -539,9 +594,9 @@
     </style>
   </head>
   <body>
-    <div class="no-print"><button onclick="window.print()">Печать / сохранить PDF</button></div>
-    ${body}
-    <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+    <div class="no-print">${actionButton}</div>
+    <div data-print-root>${body}</div>
+    ${outputScript}
   </body>
 </html>`;
   };
@@ -706,7 +761,7 @@
         <table class="upd-items">
           ${updColGroup}
           <thead>
-            <tr>
+            <tr class="upd-header-main">
               <th rowspan="2">Код товара/<br>работ,<br>услуг</th><th rowspan="2">№<br>п/п</th>
               <th rowspan="2">Наименование товара<br>(описание выполненных<br>работ, оказанных услуг),<br>имущественного права</th>
               <th rowspan="2">Код<br>вида<br>товара</th><th colspan="2">Единица<br>измерения</th>
@@ -721,7 +776,7 @@
               <th rowspan="2">Количество товара,<br>подлежащего<br>прослеживаемости</th>
               <th rowspan="2">Стоимость товара,<br>подлежащего<br>прослеживаемости,<br>без НДС</th>
             </tr>
-            <tr>
+            <tr class="upd-header-sub">
               <th>код</th><th>услов-<br>ное<br>обозна-<br>чение<br>(нацио-<br>наль-<br>ное)</th>
               <th>цифровой<br>код</th><th>краткое<br>наиме-<br>нование</th>
               <th>код</th><th>условное<br>обозначение</th>
@@ -733,6 +788,7 @@
             <tr class="total-row"><td></td><td colspan="7" class="center">Всего к оплате (9)</td><td class="right">${formatMoney(total)}</td><td class="center">Х</td><td class="center">Х</td><td class="center">без<br>НДС</td><td class="right">${formatMoney(total)}</td><td colspan="7"></td></tr>
           </tbody>
         </table>
+        <div class="upd-footer"><span>Номер документа: ${html(invoiceNumber)}</span><span>1 / 2</span><span></span></div>
       </main>
       <main class="doc-page landscape upd upd-transfer-page">
         <section class="upd-transfer-head">
@@ -777,8 +833,10 @@
             <div class="stamp">(М.П.)</div>
           </section>
         </section>
+        <div class="upd-footer"><span>Номер документа: ${html(invoiceNumber)}</span><span>2 / 2</span><span></span></div>
       </main>`,
-      'landscape'
+      'landscape',
+      { pdf: true }
     );
   };
   const openPrintDocument = (kind, workId) => {
@@ -1001,6 +1059,7 @@
     const amount = totalWorkAmount(items);
     const existingId = form._id.value;
     const year = documentDate.getFullYear();
+    const source = form.source.value === 'kwork' ? 'kwork' : 'document';
     const payload = normalizeWork({
       _id: existingId || uid(),
       items,
@@ -1008,14 +1067,14 @@
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
       isPayed: form.isPayed.checked,
       currency: 'RUB',
-      source: form.source.value,
-      sourceName: form.source.value === 'kwork' ? 'Kwork' : 'Счет/акт',
-      platformCommission: form.source.value === 'kwork' ? Math.max(0, amount - toNumber(form.creditedAmount.value, amount)) : 0,
+      source,
+      sourceName: source === 'kwork' ? 'Kwork' : 'Счет/акт',
+      platformCommission: source === 'kwork' ? Math.max(0, amount - toNumber(form.creditedAmount.value, amount)) : 0,
       payoutCommission: 0,
       executorOrganizationId: form.executorOrganizationId.value,
       clientId: form.clientId.value,
-      actNumber: normalizeText(form.actNumber.value) || nextNumber(year, 'act'),
-      invoiceNumber: normalizeText(form.invoiceNumber.value) || nextNumber(year, 'invoice'),
+      actNumber: source === 'kwork' ? '' : normalizeText(form.actNumber.value) || nextNumber(year, 'act'),
+      invoiceNumber: source === 'kwork' ? '' : normalizeText(form.invoiceNumber.value) || nextNumber(year, 'invoice'),
       actDate: documentDate.toISOString(),
       invoiceDate: documentDate.toISOString()
     });
@@ -1410,7 +1469,11 @@
     if (!client) throw new Error('Для импорта нужен клиент с признаком "Это физлицо"');
     let importedRows = 0;
     let skippedDuplicates = 0;
-    for (const row of rows) {
+    const sortedRows = [...rows].sort((left, right) => {
+      const byDate = left.date.getTime() - right.date.getTime();
+      return byDate || left.description.localeCompare(right.description, 'ru');
+    });
+    for (const row of sortedRows) {
       const duplicate = state.db.works.some(
         (work) =>
           sameDay(work.actDate || work.invoiceDate, row.date) &&
@@ -1422,7 +1485,6 @@
         skippedDuplicates += 1;
         continue;
       }
-      const year = row.date.getFullYear();
       state.db.works.push(
         normalizeWork({
           _id: uid(),
@@ -1432,8 +1494,8 @@
           currency: 'RUB',
           executorOrganizationId: organization._id,
           clientId: client._id,
-          actNumber: nextNumber(year, 'act'),
-          invoiceNumber: nextNumber(year, 'invoice'),
+          actNumber: '',
+          invoiceNumber: '',
           actDate: row.date.toISOString(),
           invoiceDate: row.date.toISOString(),
           source: 'kwork',
