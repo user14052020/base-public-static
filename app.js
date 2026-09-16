@@ -257,6 +257,302 @@
     const amountInput = row?.querySelector('[data-item-amount]');
     if (amountInput) amountInput.value = formatMoney(workItemAmountFromRow(row));
   };
+  const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
+  const getClient = (id) => state.db.clients.find((item) => item._id === id);
+  const quantityText = (value) =>
+    (Number(value) || 0).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  const dateForFilename = (value) => {
+    const date = parseDate(value);
+    if (!date) return 'без-даты';
+    return [String(date.getDate()).padStart(2, '0'), String(date.getMonth() + 1).padStart(2, '0'), date.getFullYear()].join('.');
+  };
+  const sanitizeDocumentPart = (value) =>
+    normalizeText(value || 'без номера')
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+      .replace(/\s+/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^[.\-\s]+|[.\-\s]+$/g, '')
+      .toLowerCase() || 'без-значения';
+  const documentTitle = (kind, work) => {
+    const type = kind === 'act' ? 'акт' : kind === 'upd' ? 'упд' : 'счет';
+    const number = kind === 'act' ? work.actNumber : work.invoiceNumber;
+    const date = kind === 'act' ? work.actDate : work.invoiceDate;
+    return `${type}№${sanitizeDocumentPart(number)}от${dateForFilename(date)}`;
+  };
+  const innKpp = (party) =>
+    [party?.inn ? `ИНН ${party.inn}` : '', party?.kpp ? `КПП ${party.kpp}` : ''].filter(Boolean).join(', ');
+  const partyLine = (party) =>
+    [party?.name, innKpp(party), party?.address].map(normalizeText).filter(Boolean).join(', ') || '-';
+  const signerName = (party) => party?.signerName || party?.shortName || party?.name || '';
+  const plural = (value, forms) => {
+    const number = Math.abs(value) % 100;
+    const last = number % 10;
+    if (number > 10 && number < 20) return forms[2];
+    if (last > 1 && last < 5) return forms[1];
+    if (last === 1) return forms[0];
+    return forms[2];
+  };
+  const integerToWords = (value) => {
+    const units = [
+      ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'],
+      ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять']
+    ];
+    const teens = ['десять', 'одиннадцать', 'двенадцать', 'тринадцать', 'четырнадцать', 'пятнадцать', 'шестнадцать', 'семнадцать', 'восемнадцать', 'девятнадцать'];
+    const tens = ['', '', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто'];
+    const hundreds = ['', 'сто', 'двести', 'триста', 'четыреста', 'пятьсот', 'шестьсот', 'семьсот', 'восемьсот', 'девятьсот'];
+    const groups = [
+      { value: 1000000000, forms: ['миллиард', 'миллиарда', 'миллиардов'], gender: 1 },
+      { value: 1000000, forms: ['миллион', 'миллиона', 'миллионов'], gender: 1 },
+      { value: 1000, forms: ['тысяча', 'тысячи', 'тысяч'], gender: 0 }
+    ];
+    const chunkWords = (chunk, gender) => {
+      const words = [hundreds[Math.floor(chunk / 100)]];
+      const rest = chunk % 100;
+      if (rest >= 10 && rest < 20) words.push(teens[rest - 10]);
+      else words.push(tens[Math.floor(rest / 10)], units[gender][rest % 10]);
+      return words.filter(Boolean);
+    };
+    if (!value) return 'ноль';
+    let rest = Math.floor(Math.abs(value));
+    const words = [];
+    for (const group of groups) {
+      const count = Math.floor(rest / group.value);
+      if (count) {
+        words.push(...chunkWords(count, group.gender), plural(count, group.forms));
+        rest %= group.value;
+      }
+    }
+    words.push(...chunkWords(rest, 1));
+    return words.filter(Boolean).join(' ');
+  };
+  const amountToWords = (value) => {
+    const totalKopecks = Math.round((Number(value) || 0) * 100);
+    const rubles = Math.floor(totalKopecks / 100);
+    const kopecks = totalKopecks % 100;
+    const words = integerToWords(rubles);
+    return `${words.charAt(0).toUpperCase()}${words.slice(1)} ${plural(rubles, ['рубль', 'рубля', 'рублей'])} ${String(kopecks).padStart(2, '0')} ${plural(kopecks, ['копейка', 'копейки', 'копеек'])}`;
+  };
+  const documentsCell = (work) => `
+    <div class="doc-actions">
+      <button class="secondary" data-action="print-doc" data-doc="act" data-id="${html(work._id)}">АКТ ${html(work.actNumber || '')}</button>
+      <button class="secondary" data-action="print-doc" data-doc="invoice" data-id="${html(work._id)}">СЧЕТ ${html(work.invoiceNumber || '')}</button>
+      <button class="secondary" data-action="print-doc" data-doc="upd" data-id="${html(work._id)}">УПД ${html(work.invoiceNumber || '')}</button>
+    </div>
+  `;
+  const printableRows = (work, mode = 'full') =>
+    work.items
+      .map(
+        (item, index) => `
+      <tr>
+        <td class="center">${index + 1}</td>
+        <td>${html(item.name)}</td>
+        ${mode === 'simple' ? '' : `<td class="right">${quantityText(item.quantity)}</td><td class="right">${formatMoney(item.price)}</td>`}
+        <td class="right">${formatMoney(item.amount)}</td>
+      </tr>
+    `
+      )
+      .join('');
+  const printableShell = (title, body, layout = 'portrait') => `<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>${html(title)}</title>
+    <style>
+      @page { size: A4 ${layout}; margin: 12mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #111; font: 12px/1.35 Arial, sans-serif; }
+      h1, h2, h3, p { margin: 0; }
+      .no-print { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 8px; background: #fff; border-bottom: 1px solid #ddd; }
+      .no-print button { border: 1px solid #222; background: #222; color: #fff; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+      .doc-page { max-width: 190mm; margin: 0 auto; }
+      .landscape { max-width: 273mm; }
+      .title { margin: 18px 0 14px; text-align: center; font-size: 19px; font-weight: 700; }
+      .subtitle { margin: 8px 0; }
+      .line { margin: 5px 0; }
+      .party { margin: 7px 0; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #111; padding: 5px 6px; vertical-align: top; }
+      th { text-align: center; font-weight: 700; background: #f5f5f5; }
+      .right { text-align: right; }
+      .center { text-align: center; }
+      .bold { font-weight: 700; }
+      .bank td { height: 23px; }
+      .totals td { font-weight: 700; }
+      .summary { margin-top: 14px; }
+      .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 48px; }
+      .sign-box { min-height: 74px; border: 1px solid #111; padding: 10px; }
+      .sign-line { margin-top: 26px; border-bottom: 1px solid #111; min-height: 18px; }
+      .upd { font-size: 7.2px; line-height: 1.12; }
+      .upd .top { display: grid; grid-template-columns: 72px 1fr 230px; gap: 8px; align-items: start; }
+      .upd .side { border-right: 2px solid #111; padding-right: 5px; min-height: 146px; }
+      .upd .status { display: inline-grid; place-items: center; width: 22px; height: 18px; border: 1px solid #111; font-size: 12px; font-weight: 700; }
+      .upd .fns { text-align: right; }
+      .upd-line { display: grid; grid-template-columns: 172px 1fr 24px; gap: 5px; min-height: 12px; }
+      .upd-value { border-bottom: 1px solid #111; min-height: 11px; }
+      .upd table { margin-top: 5px; }
+      .upd th, .upd td { padding: 2px; font-size: 6.8px; line-height: 1.05; }
+      .upd-transfer { margin-top: 12px; display: grid; gap: 6px; }
+      @media print {
+        .no-print { display: none; }
+        body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="no-print"><button onclick="window.print()">Печать / сохранить PDF</button></div>
+    ${body}
+    <script>window.addEventListener('load', () => setTimeout(() => window.print(), 300));</script>
+  </body>
+</html>`;
+  const invoiceDocument = (work, organization, client) => {
+    const total = totalWorkAmount(work.items);
+    return printableShell(
+      documentTitle('invoice', work),
+      `<main class="doc-page">
+        <h1 class="title">Счет № ${html(work.invoiceNumber || '-')} от ${displayDate(work.invoiceDate)} г.</h1>
+        <table class="bank">
+          <tr><td>ИНН ${html(organization.inn || '')}</td><td>КПП ${html(organization.kpp || '')}</td><td>Сч. №</td><td>${html(organization.bankAccount || '')}</td></tr>
+          <tr><td colspan="2">Получатель<br><b>${html(organization.name || '')}</b></td><td>БИК</td><td>${html(organization.bik || '')}</td></tr>
+          <tr><td colspan="2">Банк получателя<br>${html(organization.bankName || '')}</td><td>Сч. №</td><td>${html(organization.correspondentAccount || '')}</td></tr>
+        </table>
+        <p class="party"><b>Поставщик:</b> ${html(partyLine(organization))}</p>
+        <p class="party"><b>Покупатель:</b> ${html(partyLine(client))}</p>
+        <table>
+          <thead><tr><th style="width:36px">№</th><th>Наименование товара/услуги</th><th style="width:130px">Сумма</th></tr></thead>
+          <tbody>${printableRows(work, 'simple')}</tbody>
+          <tfoot class="totals">
+            <tr><td colspan="2" class="right">Итого:</td><td class="right">${formatMoney(total)}</td></tr>
+            <tr><td colspan="2" class="right">Итого НДС:</td><td class="right">0,00</td></tr>
+            <tr><td colspan="2" class="right">Всего к оплате:</td><td class="right">${formatMoney(total)}</td></tr>
+          </tfoot>
+        </table>
+        <p class="summary">Всего наименований ${work.items.length}, на сумму ${formatMoney(total)} руб.</p>
+        <p class="summary bold">${html(amountToWords(total))}</p>
+        <section class="signatures">
+          <div class="sign-box"><b>Руководитель предприятия</b><div class="sign-line">${html(signerName(organization))}</div></div>
+          <div class="sign-box"><b>Главный бухгалтер</b><div class="sign-line">${html(organization.chiefAccountant || '')}</div></div>
+        </section>
+      </main>`
+    );
+  };
+  const actDocument = (work, organization, client) => {
+    const total = totalWorkAmount(work.items);
+    const totalQuantity = work.items.reduce((sum, item) => sum + toNumber(item.quantity, 0), 0);
+    return printableShell(
+      documentTitle('act', work),
+      `<main class="doc-page">
+        <h1 class="title">Акт выполненных работ (оказанных услуг) № ${html(work.actNumber || '-')} от ${displayDate(work.actDate)} г.</h1>
+        <p class="party"><b>Исполнитель:</b> ${html(partyLine(organization))}</p>
+        <p class="party"><b>Заказчик:</b> ${html(partyLine(client))}</p>
+        <p class="party"><b>Договор:</b> ${html(client.contract || '-')}</p>
+        <table>
+          <thead><tr><th style="width:36px">№</th><th>Наименование услуги</th><th style="width:90px">Количество</th><th style="width:100px">Цена</th><th style="width:110px">Сумма</th></tr></thead>
+          <tbody>${printableRows(work)}</tbody>
+          <tfoot class="totals">
+            <tr><td colspan="4" class="right">Итого:</td><td class="right">${formatMoney(total)}</td></tr>
+            <tr><td colspan="4" class="right">Без налога (НДС):</td><td class="right">-</td></tr>
+          </tfoot>
+        </table>
+        <p class="summary">Всего оказано услуг: ${quantityText(totalQuantity)}, на сумму: ${formatMoney(total)} руб.</p>
+        <p class="summary bold">Всего к оплате: ${html(amountToWords(total))}</p>
+        <p class="summary">Вышеперечисленные услуги выполнены полностью и в срок. Заказчик претензий по объему, качеству и срокам оказания услуг не имеет.</p>
+        <section class="signatures">
+          <div class="sign-box"><b>Исполнитель</b><div class="sign-line">${html(signerName(organization))}</div></div>
+          <div class="sign-box"><b>Заказчик</b><div class="sign-line">${html(signerName(client))}</div></div>
+        </section>
+      </main>`
+    );
+  };
+  const updDocument = (work, organization, client) => {
+    const total = totalWorkAmount(work.items);
+    const invoiceNumber = work.invoiceNumber || work.actNumber || '-';
+    return printableShell(
+      documentTitle('upd', work),
+      `<main class="doc-page landscape upd">
+        <section class="top">
+          <div class="side">
+            <b>Универсальный<br>передаточный<br>документ</b><br><br>
+            Статус <span class="status">2</span><br><br>
+            1 - счет-фактура<br>и передаточный<br>документ (акт)<br>
+            2 - передаточный<br>документ (акт)<br>
+            3 - счет-фактура
+          </div>
+          <div>
+            ${[
+              ['Счет-фактура N', `${invoiceNumber} от ${displayDate(work.invoiceDate)}` , '(1)'],
+              ['Исправление N', '- от -', '(1а)'],
+              ['Продавец:', organization.name || '-', '(2)'],
+              ['Адрес:', organization.address || '-', '(2а)'],
+              ['ИНН/КПП продавца:', innKpp(organization) || '-', '(2б)'],
+              ['Грузоотправитель и его адрес:', 'он же', '(3)'],
+              ['Грузополучатель и его адрес:', '-', '(4)'],
+              ['Документ об отгрузке:', `УПД № ${invoiceNumber} от ${displayDate(work.invoiceDate)}`, '(5а)'],
+              ['Покупатель:', client.name || '-', '(6)'],
+              ['Адрес:', client.address || '-', '(6а)'],
+              ['ИНН/КПП покупателя:', innKpp(client) || '-', '(6б)'],
+              ['Валюта: наименование, код', 'Российский рубль, 643', '(7)']
+            ]
+              .map(([label, value, code]) => `<div class="upd-line"><b>${html(label)}</b><span class="upd-value">${html(value)}</span><span>${html(code)}</span></div>`)
+              .join('')}
+          </div>
+          <div class="fns">
+            Приложение № 1 к постановлению Правительства Российской Федерации<br>
+            от 26 декабря 2011 года № 1137<br>
+            (в ред. Постановления Правительства РФ от 23.01.2026 № 26)
+          </div>
+        </section>
+        <table>
+          <thead>
+            <tr>
+              <th rowspan="2">№<br>п/п</th><th rowspan="2">Наименование товара<br>(описание выполненных работ, оказанных услуг)</th>
+              <th colspan="2">Единица измерения</th><th rowspan="2">Количество</th><th rowspan="2">Цена</th>
+              <th rowspan="2">Стоимость без налога</th><th rowspan="2">В том числе акциз</th><th rowspan="2">Налоговая ставка</th>
+              <th rowspan="2">Сумма налога</th><th rowspan="2">Стоимость с налогом</th><th colspan="2">Страна происхождения товара</th>
+              <th rowspan="2">Рег. номер декларации</th>
+            </tr>
+            <tr><th>код</th><th>условное обозначение</th><th>код</th><th>краткое наименование</th></tr>
+          </thead>
+          <tbody>
+            ${work.items
+              .map(
+                (item, index) => `<tr><td class="center">${index + 1}</td><td>${html(item.name)}</td><td class="center">796</td><td class="center">шт</td><td class="right">${quantityText(item.quantity)}</td><td class="right">${formatMoney(item.price)}</td><td class="right">${formatMoney(item.amount)}</td><td class="center">без акциза</td><td class="center">без НДС</td><td class="right">0,00</td><td class="right">${formatMoney(item.amount)}</td><td></td><td></td><td></td></tr>`
+              )
+              .join('')}
+            <tr class="totals"><td colspan="6" class="right">Всего к оплате</td><td class="right">${formatMoney(total)}</td><td></td><td></td><td class="right">0,00</td><td class="right">${formatMoney(total)}</td><td colspan="3"></td></tr>
+          </tbody>
+        </table>
+        <section class="upd-transfer">
+          <div class="upd-line"><b>Документ об отгрузке, передаче</b><span class="upd-value">УПД № ${html(invoiceNumber)} от ${displayDate(work.invoiceDate)}</span><span>(9)</span></div>
+          <div class="upd-line"><b>Иные сведения об отгрузке, передаче</b><span class="upd-value">Услуги оказаны в полном объеме</span><span>(13)</span></div>
+          <div class="upd-line"><b>Ответственный за правильность оформления факта хозяйственной жизни</b><span class="upd-value">${html(signerName(organization))}</span><span>(15)</span></div>
+        </section>
+        <section class="signatures">
+          <div class="sign-box"><b>Индивидуальный предприниматель или иное уполномоченное лицо</b><div class="sign-line">${html(signerName(organization))}</div></div>
+          <div class="sign-box"><b>Ответственный за правильность оформления со стороны покупателя</b><div class="sign-line">${html(signerName(client))}</div></div>
+        </section>
+      </main>`,
+      'landscape'
+    );
+  };
+  const openPrintDocument = (kind, workId) => {
+    const work = state.db.works.find((item) => item._id === workId);
+    if (!work) throw new Error('Работа не найдена');
+    const organization = getOrganization(work.executorOrganizationId);
+    const client = getClient(work.clientId);
+    if (!organization || !client) throw new Error('Для печати нужно выбрать организацию и клиента');
+    const normalizedWork = normalizeWork(work);
+    const htmlDocument =
+      kind === 'act'
+        ? actDocument(normalizedWork, organization, client)
+        : kind === 'upd'
+          ? updDocument(normalizedWork, organization, client)
+          : invoiceDocument(normalizedWork, organization, client);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) throw new Error('Браузер заблокировал окно печати');
+    printWindow.document.open();
+    printWindow.document.write(htmlDocument);
+    printWindow.document.close();
+  };
 
   const shell = (content) => `
     <div class="app-shell">
@@ -343,7 +639,7 @@
                   <td>${html(workTitle(work))}</td>
                   <td>${html(organizationName(work.executorOrganizationId))}</td>
                   <td>${html(clientName(work.clientId))}</td>
-                  <td>АКТ ${html(work.actNumber || '—')}<br/>СЧЕТ ${html(work.invoiceNumber || '—')}</td>
+                  <td>${documentsCell(work)}</td>
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
                   <td>${formatMoney(work.amount)} ${html(work.currency || 'RUB')}</td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
@@ -990,6 +1286,9 @@
       if (action === 'reset-search') {
         state.query = '';
         renderWorks();
+      }
+      if (action === 'print-doc') {
+        openPrintDocument(target.dataset.doc, target.dataset.id);
       }
       if (action === 'add-item') {
         const container = document.querySelector('.work-items');

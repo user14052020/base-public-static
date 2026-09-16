@@ -265,6 +265,17 @@ th {
   align-items: end;
 }
 
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.doc-actions button {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
 .totals {
   display: grid;
   grid-template-columns: repeat(5, minmax(140px, 1fr));
