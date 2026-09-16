@@ -248,6 +248,15 @@
   };
 
   const totalWorkAmount = (items) => items.reduce((sum, item) => sum + normalizeItem(item).amount, 0);
+  const workItemAmountFromRow = (row) => {
+    const quantity = Math.max(0, toNumber(row.querySelector('[name="itemQuantity"]')?.value, 0));
+    const price = Math.max(0, toNumber(row.querySelector('[name="itemPrice"]')?.value, 0));
+    return quantity * price;
+  };
+  const updateWorkItemAmount = (row) => {
+    const amountInput = row?.querySelector('[data-item-amount]');
+    if (amountInput) amountInput.value = formatMoney(workItemAmountFromRow(row));
+  };
 
   const shell = (content) => `
     <div class="app-shell">
@@ -417,7 +426,7 @@
                   <label>Наименование<input name="itemName" value="${html(item.name)}" /></label>
                   <label>Кол-во<input name="itemQuantity" type="number" min="0.001" step="0.001" value="${html(item.quantity || 1)}" /></label>
                   <label>Цена<input name="itemPrice" type="number" min="0" step="0.01" value="${html(item.price || 0)}" /></label>
-                  <label>Сумма<input readonly value="${html(formatMoney((item.quantity || 0) * (item.price || 0)))}" /></label>
+                  <label>Сумма<input data-item-amount readonly value="${html(formatMoney((item.quantity || 0) * (item.price || 0)))}" /></label>
                   <button class="danger" type="button" data-action="remove-item" ${items.length === 1 ? 'disabled' : ''}>Удалить</button>
                 </div>
               `
@@ -928,6 +937,10 @@
       state.query = target.value;
       renderWorks();
     }
+    if (target.name === 'itemQuantity' || target.name === 'itemPrice') {
+      const row = target.closest('[data-item-row]');
+      if (row) updateWorkItemAmount(row);
+    }
   });
 
   document.addEventListener('click', async (event) => {
@@ -985,6 +998,7 @@
           input.value = input.name === 'itemQuantity' ? '1' : input.name === 'itemPrice' ? '0' : '';
           input.readOnly = input.readOnly;
         });
+        updateWorkItemAmount(row);
         row.querySelector('[data-action="remove-item"]').disabled = false;
         container.appendChild(row);
       }
