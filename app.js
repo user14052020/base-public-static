@@ -469,6 +469,7 @@
       .act-title { margin: 4mm 0 5mm; text-align: center; font-size: 16pt; font-weight: 700; white-space: nowrap; }
       .labeled { margin: 2mm 0; }
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .bank-table, .work-table { outline: 1px solid #111; outline-offset: -1px; }
       th, td { border: 1px solid #111; padding: 2.7mm 2.8mm; vertical-align: top; }
       th { text-align: center; font-weight: 700; background: #fff; }
       .right { text-align: right; }
@@ -484,17 +485,23 @@
       .sign-grid > div + div { border-left: 1px solid #111; }
       .sign-row { margin-top: 8mm; }
       .upd { font-size: 5.3pt; line-height: 1.05; }
-      .upd-top { display: grid; grid-template-columns: 24.3mm 1fr 78mm; align-items: start; }
+      .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: start; }
       .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 1.5px solid #111; }
       .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
       .upd-status { display: inline-grid; place-items: center; width: 7mm; height: 5.5mm; margin-left: 2mm; border: 1px solid #111; font-size: 8pt; font-weight: 700; }
       .upd-legend { margin-top: 5mm; }
-      .upd-note { text-align: right; padding-top: 5mm; }
+      .upd-note { position: absolute; top: 5mm; right: 0; width: 78mm; text-align: right; }
       .upd-lines { padding: 21mm 1.5mm 0 4mm; }
-      .upd-line { display: grid; grid-template-columns: 56mm 1fr 8mm; align-items: end; min-height: 3.35mm; }
+      .upd-invoice-lines { width: 94mm; }
+      .upd-party-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; margin-top: 1.2mm; }
+      .upd-line { display: grid; grid-template-columns: 38mm 1fr 8mm; align-items: end; min-height: 3.35mm; }
+      .upd-line.wide-label { grid-template-columns: 49mm 1fr 8mm; }
+      .upd-line.tall { min-height: 6.5mm; }
+      .upd-line.extra-tall { min-height: 8.4mm; }
       .upd-line b { font-weight: 700; }
       .upd-value { min-height: 3mm; border-bottom: 1px solid #111; padding-left: 1mm; }
       .upd-code { text-align: right; }
+      .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5pt; }
       .upd-items { margin-top: 0; }
       .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 4.6pt; line-height: 1.03; overflow-wrap: anywhere; }
       .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
@@ -631,6 +638,30 @@
         </tr>`
       )
       .join('');
+    const renderUpdLine = ([label, value, code, className = '']) =>
+      `<div class="upd-line ${className}"><b>${html(label)}</b><span class="upd-value">${html(value)}</span><span class="upd-code">${html(code)}</span></div>`;
+    const invoiceRows = [
+      ['Счет-фактура N', `${invoiceNumber} от ${invoiceDate}`, '(1)', ''],
+      ['Исправление N', '- от -', '(1а)', '']
+    ];
+    const sellerRows = [
+      ['Продавец:', seller, '(2)', ''],
+      ['Адрес:', organization.address || '-', '(2а)', ''],
+      ['ИНН/КПП продавца:', rawInnKpp(organization), '(2б)', ''],
+      ['Грузоотправитель и его адрес:', 'он же', '(3)', ''],
+      ['Грузополучатель и его адрес:', '-', '(4)', ''],
+      ['К платежно-расчетному документу №', '', '(5)', 'wide-label'],
+      ['Документ об отгрузке:', shipmentDocumentLine(work), '(5а)', 'wide-label']
+    ];
+    const buyerRows = [
+      ['Покупатель:', buyer, '(6)', 'wide-label'],
+      ['Адрес:', client.address || '-', '(6а)', 'wide-label tall'],
+      ['ИНН/КПП покупателя:', rawInnKpp(client), '(6б)', 'wide-label'],
+      ['Валюта: наименование, код', 'Российский рубль, 643', '(7)', 'wide-label'],
+      ['Идентификатор государственного контракта, договора (соглашения) (при наличии):', '', '(8)', 'wide-label extra-tall']
+    ];
+    const prepaymentInvoiceLabel =
+      'К счету-фактуре (счетам-фактурам), выставленному (выставленным) при получении оплаты, частичной оплаты или иных платежей в счет предстоящих поставок товаров (выполнения работ, оказания услуг), передачи имущественных прав';
     return printableShell(
       documentTitle('upd', work),
       `<main class="doc-page landscape upd">
@@ -645,27 +676,12 @@
             </div>
           </div>
           <div class="upd-lines">
-            ${[
-              ['Счет-фактура N', `${invoiceNumber} от ${invoiceDate}` , '(1)'],
-              ['Исправление N', '- от -', '(1а)'],
-              ['Продавец:', seller, '(2)'],
-              ['Адрес:', organization.address || '-', '(2а)'],
-              ['ИНН/КПП продавца:', rawInnKpp(organization), '(2б)'],
-              ['Грузоотправитель и его адрес:', 'он же', '(3)'],
-              ['Грузополучатель и его адрес:', '-', '(4)'],
-              ['К платежно-расчетному документу №', '', '(5)'],
-              ['Документ об отгрузке:', shipmentDocumentLine(work), '(5а)'],
-              ['Покупатель:', buyer, '(6)'],
-              ['Адрес:', client.address || '-', '(6а)'],
-              ['ИНН/КПП покупателя:', rawInnKpp(client), '(6б)'],
-              ['Валюта: наименование, код', 'Российский рубль, 643', '(7)'],
-              ['Идентификатор государственного контракта, договора (соглашения)(при наличии):', '', '(8)']
-            ]
-              .map(
-                ([label, value, code]) =>
-                  `<div class="upd-line"><b>${html(label)}</b><span class="upd-value">${html(value)}</span><span class="upd-code">${html(code)}</span></div>`
-              )
-              .join('')}
+            <div class="upd-invoice-lines">${invoiceRows.map(renderUpdLine).join('')}</div>
+            <div class="upd-party-grid">
+              <div>${sellerRows.map(renderUpdLine).join('')}</div>
+              <div>${buyerRows.map(renderUpdLine).join('')}</div>
+            </div>
+            <div class="upd-prepayment-line"><b>${html(prepaymentInvoiceLabel)}</b><span class="upd-code">(5б)</span></div>
           </div>
           <div class="upd-note">
             Приложение № 1 к постановлению Правительства Российской Федерации<br>
