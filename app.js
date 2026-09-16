@@ -480,6 +480,8 @@
             window.print();
             return;
           }
+          const root = document.querySelector('[data-print-root]');
+          document.body.classList.add('pdf-render');
           await window.html2pdf()
             .set({
               filename: pdfFilename,
@@ -487,11 +489,12 @@
               image: { type: 'jpeg', quality: 0.98 },
               html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
               jsPDF: { unit: 'mm', format: 'a4', orientation: pdfLayout },
-              pagebreak: { mode: ['css', 'legacy'] }
+              pagebreak: { mode: ['css'], before: '.doc-page + .doc-page', avoid: '.doc-page' }
             })
-            .from(document.querySelector('[data-print-root]'))
+            .from(root)
             .save();
         } finally {
+          document.body.classList.remove('pdf-render');
           if (button) {
             button.disabled = false;
             button.textContent = 'Скачать PDF';
@@ -517,6 +520,8 @@
       .no-print button { border: 1px solid #222; background: #222; color: #fff; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
       .doc-page { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 17mm 15mm; background: #fff; page-break-after: always; }
       .doc-page:last-child { page-break-after: auto; }
+      .pdf-render .doc-page { page-break-after: auto; break-after: auto; }
+      .pdf-render .doc-page + .doc-page { page-break-before: always; break-before: page; }
       .landscape { width: 297mm; min-height: 210mm; padding: 7mm 6.3mm 8mm; }
       .org-title { margin-bottom: 3mm; text-align: center; font-size: 16pt; font-weight: 700; white-space: nowrap; }
       .org-address { margin-bottom: 5mm; }
@@ -540,8 +545,9 @@
       .sign-grid > div + div { border-left: 1px solid #111; }
       .sign-row { margin-top: 8mm; }
       .upd { font-size: 6.1pt; line-height: 1.08; }
-      .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: start; }
+      .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: stretch; }
       .doc-page.landscape.upd { height: 210mm; min-height: 0; overflow: hidden; }
+      .pdf-render .doc-page.landscape.upd { height: 209.5mm; }
       .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 0.5px solid #111; }
       .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
       .upd-status { display: inline-grid; place-items: center; width: 7mm; height: 5.5mm; margin-left: 2mm; border: 1px solid #111; font-size: 8pt; font-weight: 700; }
@@ -836,7 +842,8 @@
         </section>
         <div class="upd-footer"><span>Номер документа: ${html(invoiceNumber)}</span><span>2 / 2</span><span></span></div>
       </main>`,
-      'landscape'
+      'landscape',
+      { pdf: true }
     );
   };
   const openPrintDocument = (kind, workId) => {
