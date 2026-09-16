@@ -31,6 +31,10 @@
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  const cellLines = (items) => {
+    const text = items.map((item) => normalizeText(item)).filter(Boolean).join('\n');
+    return text ? html(text).replace(/\n/g, '<br>') : '—';
+  };
 
   const normalizeText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
   const toNumber = (value, fallback = 0) => {
@@ -1121,16 +1125,37 @@
       <section class="panel">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Название</th><th>Физлицо</th><th>ИНН</th><th>Договор</th><th>Действия</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Название</th>
+                <th>Тип</th>
+                <th>ИНН / КПП</th>
+                <th>Банк</th>
+                <th>Счета</th>
+                <th>Адрес</th>
+                <th>Контакты</th>
+                <th>Договор</th>
+                <th>Подписант</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
             <tbody>
               ${state.db.clients
                 .map(
                   (client) => `
                 <tr>
                   <td>${html(client.name)}</td>
-                  <td>${client.isPhysicalPerson ? 'Да' : 'Нет'}</td>
-                  <td>${html(client.inn || '—')}</td>
-                  <td>${html(client.contract || '—')}</td>
+                  <td>${client.isPhysicalPerson ? 'Физлицо' : 'Организация'}</td>
+                  <td>${cellLines([client.inn, client.kpp])}</td>
+                  <td>${cellLines([client.bankName, client.bik ? `БИК ${client.bik}` : ''])}</td>
+                  <td>${cellLines([
+                    client.bankAccount ? `р/с ${client.bankAccount}` : '',
+                    client.correspondentAccount ? `к/с ${client.correspondentAccount}` : ''
+                  ])}</td>
+                  <td>${cellLines([client.address])}</td>
+                  <td>${cellLines([client.email, client.phone])}</td>
+                  <td>${cellLines([client.contract])}</td>
+                  <td>${cellLines([client.signerName])}</td>
                   <td><div class="row">
                     <button class="secondary" data-action="edit-client" data-id="${html(client._id)}">Редактировать</button>
                     <button class="danger" data-action="delete-client" data-id="${html(client._id)}">Удалить</button>
@@ -1150,7 +1175,22 @@
     if (state.editingClientId === null) return '';
     const client =
       state.editingClientId === ''
-        ? { _id: '', name: '', isPhysicalPerson: false, inn: '', kpp: '', address: '', contract: '', signerName: '' }
+        ? {
+            _id: '',
+            name: '',
+            isPhysicalPerson: false,
+            inn: '',
+            kpp: '',
+            bankAccount: '',
+            bankName: '',
+            bik: '',
+            correspondentAccount: '',
+            address: '',
+            email: '',
+            phone: '',
+            contract: '',
+            signerName: ''
+          }
         : state.db.clients.find((item) => item._id === state.editingClientId);
     if (!client) return '';
     return `
@@ -1162,6 +1202,12 @@
             <label>Название<input name="name" required value="${html(client.name)}" /></label>
             <label>ИНН<input name="inn" value="${html(client.inn || '')}" /></label>
             <label>КПП<input name="kpp" value="${html(client.kpp || '')}" /></label>
+            <label>Расчетный счет<input name="bankAccount" value="${html(client.bankAccount || '')}" /></label>
+            <label>Банк<input name="bankName" value="${html(client.bankName || '')}" /></label>
+            <label>БИК<input name="bik" value="${html(client.bik || '')}" /></label>
+            <label>Корр. счет<input name="correspondentAccount" value="${html(client.correspondentAccount || '')}" /></label>
+            <label>Email<input name="email" value="${html(client.email || '')}" /></label>
+            <label>Телефон<input name="phone" value="${html(client.phone || '')}" /></label>
             <label>Договор<input name="contract" value="${html(client.contract || '')}" /></label>
             <label>Подписант<input name="signerName" value="${html(client.signerName || '')}" /></label>
             <label>Физлицо<span class="switch"><input name="isPhysicalPerson" type="checkbox" ${client.isPhysicalPerson ? 'checked' : ''}/> Это физлицо</span></label>
@@ -1180,6 +1226,12 @@
       isPhysicalPerson: form.isPhysicalPerson.checked,
       inn: normalizeText(form.inn.value),
       kpp: normalizeText(form.kpp.value),
+      bankAccount: normalizeText(form.bankAccount.value),
+      bankName: normalizeText(form.bankName.value),
+      bik: normalizeText(form.bik.value),
+      correspondentAccount: normalizeText(form.correspondentAccount.value),
+      email: normalizeText(form.email.value),
+      phone: normalizeText(form.phone.value),
       contract: normalizeText(form.contract.value),
       signerName: normalizeText(form.signerName.value),
       address: normalizeText(form.address.value)
