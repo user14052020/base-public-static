@@ -658,7 +658,9 @@
           <div><b>Руководитель предприятия</b><div class="sign-row">_____________ ${html(signer)}</div></div>
           <div><b>Главный бухгалтер</b><div class="sign-row">_____________ ${html(accountant)}</div></div>
         </section>
-      </main>`
+      </main>`,
+      'portrait',
+      { pdf: true }
     );
   };
   const actDocument = (work, organization, client) => {
@@ -696,7 +698,9 @@
           <div><b>Исполнитель:</b><div class="sign-row">_____________ ${html(executorSigner)}</div></div>
           <div><b>Заказчик:</b><div class="sign-row">_____________ ${html(clientSigner)}</div></div>
         </section>
-      </main>`
+      </main>`,
+      'portrait',
+      { pdf: true }
     );
   };
   const updDocument = (work, organization, client) => {
