@@ -7,6 +7,7 @@
     hash: 'pcDnecfCBTLHKnb3NH5cHwx/d0ylk765Irk4gZjEnAs=',
     iterations: 250000
   };
+  const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
 
   const app = document.getElementById('app');
   const state = {
@@ -124,7 +125,8 @@
   const normalizeOrganization = (organization) => ({
     ...organization,
     _id: idOf(organization._id) || uid(),
-    name: normalizeText(organization.name)
+    name: normalizeText(organization.name),
+    registrationDetails: normalizeText(organization.registrationDetails) || DEFAULT_IP_REGISTRATION_DETAILS
   });
 
   const dbFromCollections = (collections, meta = {}) => ({
@@ -281,9 +283,51 @@
   };
   const innKpp = (party) =>
     [party?.inn ? `ИНН ${party.inn}` : '', party?.kpp ? `КПП ${party.kpp}` : ''].filter(Boolean).join(', ');
+  const rawInnKpp = (party) => {
+    const inn = normalizeText(party?.inn);
+    const kpp = normalizeText(party?.kpp);
+    return inn && kpp ? `${inn} / ${kpp}` : inn || kpp || '-';
+  };
   const partyLine = (party) =>
     [party?.name, innKpp(party), party?.address].map(normalizeText).filter(Boolean).join(', ') || '-';
   const signerName = (party) => party?.signerName || party?.shortName || party?.name || '';
+  const personShortName = (value) => {
+    const cleaned = normalizeText(value).replace(/^ИП\s+/iu, '');
+    if (!cleaned) return '';
+    const match = /^([А-ЯЁA-Z][а-яёa-z-]+)\s+([А-ЯЁA-Z])\.\s*([А-ЯЁA-Z])\.?$/u.exec(cleaned);
+    if (match) return `${match[1]} ${match[2]}.${match[3]}.`;
+    const parts = cleaned.split(' ').filter(Boolean);
+    if (parts.length < 2 || !/^[А-ЯЁA-Z][а-яёa-z-]+$/u.test(parts[0])) return cleaned;
+    const initials = parts
+      .slice(1, 3)
+      .map((part) => part.charAt(0).toUpperCase())
+      .filter(Boolean)
+      .map((letter) => `${letter}.`)
+      .join('');
+    return initials ? `${parts[0]} ${initials}` : cleaned;
+  };
+  const documentBasis = (work) => `Счет № ${work.invoiceNumber || work.actNumber || '-'} от ${displayDate(work.invoiceDate || work.actDate)}`;
+  const shipmentDocumentLine = (work) =>
+    `Универсальный передаточный документ, № ${work.invoiceNumber || work.actNumber || '-'} от ${displayDate(work.invoiceDate || work.actDate)}`;
+  const updDateText = (value) => {
+    const date = parseDate(value);
+    if (!date) return '';
+    const months = [
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря'
+    ];
+    return `"${String(date.getDate()).padStart(2, '0')}" ${months[date.getMonth()]} ${date.getFullYear()} г.`;
+  };
   const plural = (value, forms) => {
     const number = Math.abs(value) % 100;
     const last = number % 10;
@@ -358,40 +402,64 @@
     <meta charset="utf-8" />
     <title>${html(title)}</title>
     <style>
-      @page { size: A4 ${layout}; margin: 12mm; }
+      @page { size: A4 ${layout}; margin: 0; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #111; font: 12px/1.35 Arial, sans-serif; }
+      body { margin: 0; color: #111; background: #fff; font: 10pt/1.28 Arial, sans-serif; }
       h1, h2, h3, p { margin: 0; }
       .no-print { position: sticky; top: 0; display: flex; gap: 8px; justify-content: flex-end; padding: 8px; background: #fff; border-bottom: 1px solid #ddd; }
       .no-print button { border: 1px solid #222; background: #222; color: #fff; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
-      .doc-page { max-width: 190mm; margin: 0 auto; }
-      .landscape { max-width: 273mm; }
-      .title { margin: 18px 0 14px; text-align: center; font-size: 19px; font-weight: 700; }
-      .subtitle { margin: 8px 0; }
-      .line { margin: 5px 0; }
-      .party { margin: 7px 0; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #111; padding: 5px 6px; vertical-align: top; }
-      th { text-align: center; font-weight: 700; background: #f5f5f5; }
+      .doc-page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 17mm 15mm; background: #fff; page-break-after: always; }
+      .doc-page:last-child { page-break-after: auto; }
+      .landscape { width: 297mm; min-height: 210mm; padding: 7mm 6.3mm 8mm; }
+      .org-title { margin-bottom: 3mm; text-align: center; font-size: 16pt; font-weight: 700; white-space: nowrap; }
+      .org-address { margin-bottom: 5mm; }
+      .doc-title { margin: 5mm 0 4mm; text-align: center; font-size: 12pt; font-weight: 700; }
+      .act-title { margin: 4mm 0 5mm; text-align: center; font-size: 16pt; font-weight: 700; white-space: nowrap; }
+      .labeled { margin: 2mm 0; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { border: 1px solid #111; padding: 2.7mm 2.8mm; vertical-align: top; }
+      th { text-align: center; font-weight: 700; background: #fff; }
       .right { text-align: right; }
       .center { text-align: center; }
       .bold { font-weight: 700; }
-      .bank td { height: 23px; }
+      .bank-table td { height: 8.5mm; padding: 1.8mm 2mm; font-size: 9pt; }
+      .work-table th, .work-table td { height: 10.5mm; }
+      .work-table .name { overflow-wrap: anywhere; }
       .totals td { font-weight: 700; }
-      .summary { margin-top: 14px; }
-      .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 48px; }
-      .sign-box { min-height: 74px; border: 1px solid #111; padding: 10px; }
-      .sign-line { margin-top: 26px; border-bottom: 1px solid #111; min-height: 18px; }
-      .upd { font-size: 7.2px; line-height: 1.12; }
-      .upd .top { display: grid; grid-template-columns: 72px 1fr 230px; gap: 8px; align-items: start; }
-      .upd .side { border-right: 2px solid #111; padding-right: 5px; min-height: 146px; }
-      .upd .status { display: inline-grid; place-items: center; width: 22px; height: 18px; border: 1px solid #111; font-size: 12px; font-weight: 700; }
-      .upd .fns { text-align: right; }
-      .upd-line { display: grid; grid-template-columns: 172px 1fr 24px; gap: 5px; min-height: 12px; }
-      .upd-value { border-bottom: 1px solid #111; min-height: 11px; }
-      .upd table { margin-top: 5px; }
-      .upd th, .upd td { padding: 2px; font-size: 6.8px; line-height: 1.05; }
-      .upd-transfer { margin-top: 12px; display: grid; gap: 6px; }
+      .summary { margin-top: 5mm; }
+      .sign-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 14mm; border: 1px solid #111; min-height: 22mm; }
+      .sign-grid > div { padding: 3mm; }
+      .sign-grid > div + div { border-left: 1px solid #111; }
+      .sign-row { margin-top: 8mm; }
+      .upd { font-size: 5.3pt; line-height: 1.05; }
+      .upd-top { display: grid; grid-template-columns: 24.3mm 1fr 78mm; align-items: start; }
+      .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 1.5px solid #111; }
+      .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
+      .upd-status { display: inline-grid; place-items: center; width: 7mm; height: 5.5mm; margin-left: 2mm; border: 1px solid #111; font-size: 8pt; font-weight: 700; }
+      .upd-legend { margin-top: 5mm; }
+      .upd-note { text-align: right; padding-top: 5mm; }
+      .upd-lines { padding: 21mm 1.5mm 0 4mm; }
+      .upd-line { display: grid; grid-template-columns: 56mm 1fr 8mm; align-items: end; min-height: 3.35mm; }
+      .upd-line b { font-weight: 700; }
+      .upd-value { min-height: 3mm; border-bottom: 1px solid #111; padding-left: 1mm; }
+      .upd-code { text-align: right; }
+      .upd-items { margin-top: 0; }
+      .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 4.6pt; line-height: 1.03; overflow-wrap: anywhere; }
+      .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
+      .upd-items .code-row th { height: 4mm; }
+      .upd-items .item-row td { height: 18mm; vertical-align: middle; }
+      .upd-items .total-row td { height: 8mm; vertical-align: middle; font-weight: 700; }
+      .upd-transfer-page { font-size: 5.8pt; line-height: 1.08; padding-top: 0; }
+      .upd-transfer-head { margin-left: 24.3mm; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; min-height: 20mm; padding: 4mm 0 0 4mm; display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+      .line-label { font-weight: 700; }
+      .transfer-line { display: grid; grid-template-columns: 68mm 1fr 9mm; align-items: end; min-height: 7.2mm; }
+      .transfer-line .value { border-bottom: 1px solid #111; min-height: 4mm; text-align: center; }
+      .transfer-hint { font-size: 4.5pt; text-align: center; }
+      .transfer-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: 8mm; }
+      .transfer-sides > section + section { border-left: 1px solid #111; padding-left: 4mm; }
+      .mini-line { display: grid; grid-template-columns: 30mm 1fr 9mm; align-items: end; min-height: 12mm; }
+      .mini-line .value { border-bottom: 1px solid #111; min-height: 4mm; text-align: center; }
+      .stamp { margin-top: 2mm; text-align: center; }
       @media print {
         .no-print { display: none; }
         body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -406,31 +474,45 @@
 </html>`;
   const invoiceDocument = (work, organization, client) => {
     const total = totalWorkAmount(work.items);
+    const signer = signerName(organization);
+    const accountant = organization.chiefAccountant || '';
     return printableShell(
       documentTitle('invoice', work),
       `<main class="doc-page">
-        <h1 class="title">Счет № ${html(work.invoiceNumber || '-')} от ${displayDate(work.invoiceDate)} г.</h1>
-        <table class="bank">
-          <tr><td>ИНН ${html(organization.inn || '')}</td><td>КПП ${html(organization.kpp || '')}</td><td>Сч. №</td><td>${html(organization.bankAccount || '')}</td></tr>
-          <tr><td colspan="2">Получатель<br><b>${html(organization.name || '')}</b></td><td>БИК</td><td>${html(organization.bik || '')}</td></tr>
-          <tr><td colspan="2">Банк получателя<br>${html(organization.bankName || '')}</td><td>Сч. №</td><td>${html(organization.correspondentAccount || '')}</td></tr>
+        <h1 class="org-title">${html(organization.shortName || organization.name || '-')}</h1>
+        <p class="org-address"><b>Адрес:</b> ${html(organization.address || '-')}</p>
+        <table class="bank-table">
+          <colgroup><col style="width:24%"><col style="width:24%"><col style="width:20%"><col></colgroup>
+          <tr><td>ИНН ${html(organization.inn || '')}</td><td>КПП ${html(organization.kpp || '')}</td><td></td><td></td></tr>
+          <tr><td colspan="2">Получатель</td><td>Сч.№</td><td>${html(organization.bankAccount || '')}</td></tr>
+          <tr><td colspan="2">${html(organization.name || '')}</td><td></td><td></td></tr>
+          <tr><td colspan="2">Банк получателя</td><td>БИК</td><td>${html(organization.bik || '')}</td></tr>
+          <tr><td colspan="2">${html(organization.bankName || '')}</td><td>Сч.№</td><td>${html(organization.correspondentAccount || '')}</td></tr>
         </table>
-        <p class="party"><b>Поставщик:</b> ${html(partyLine(organization))}</p>
-        <p class="party"><b>Покупатель:</b> ${html(partyLine(client))}</p>
-        <table>
-          <thead><tr><th style="width:36px">№</th><th>Наименование товара/услуги</th><th style="width:130px">Сумма</th></tr></thead>
-          <tbody>${printableRows(work, 'simple')}</tbody>
+        <h2 class="doc-title">Счет № ${html(work.invoiceNumber || '-')} от ${displayDate(work.invoiceDate)}</h2>
+        <p class="labeled"><b>Плательщик:</b> ${html(client.name || '-')}</p>
+        <p class="labeled"><b>Адрес:</b> ${html(client.address || '-')}</p>
+        <p class="labeled"><b>Валюта (наименование, код):</b> Российский рубль, 643</p>
+        <table class="work-table">
+          <colgroup><col style="width:9mm"><col><col style="width:45mm"></colgroup>
+          <thead><tr><th>№</th><th>Наименование товара/услуги</th><th>Сумма</th></tr></thead>
+          <tbody>
+            ${work.items
+              .map(
+                (item, index) => `<tr><td class="center">${index + 1}</td><td class="name">${html(item.name)}</td><td class="right">${formatMoney(item.amount)}</td></tr>`
+              )
+              .join('')}
+          </tbody>
           <tfoot class="totals">
             <tr><td colspan="2" class="right">Итого:</td><td class="right">${formatMoney(total)}</td></tr>
             <tr><td colspan="2" class="right">Итого НДС:</td><td class="right">0,00</td></tr>
             <tr><td colspan="2" class="right">Всего к оплате:</td><td class="right">${formatMoney(total)}</td></tr>
           </tfoot>
         </table>
-        <p class="summary">Всего наименований ${work.items.length}, на сумму ${formatMoney(total)} руб.</p>
-        <p class="summary bold">${html(amountToWords(total))}</p>
-        <section class="signatures">
-          <div class="sign-box"><b>Руководитель предприятия</b><div class="sign-line">${html(signerName(organization))}</div></div>
-          <div class="sign-box"><b>Главный бухгалтер</b><div class="sign-line">${html(organization.chiefAccountant || '')}</div></div>
+        <p class="summary">Всего наименований ${work.items.length}, на сумму ${formatMoney(total)}</p>
+        <section class="sign-grid">
+          <div><b>Руководитель предприятия</b><div class="sign-row">_____________ ${html(signer)}</div></div>
+          <div><b>Главный бухгалтер</b><div class="sign-row">_____________ ${html(accountant)}</div></div>
         </section>
       </main>`
     );
@@ -438,27 +520,37 @@
   const actDocument = (work, organization, client) => {
     const total = totalWorkAmount(work.items);
     const totalQuantity = work.items.reduce((sum, item) => sum + toNumber(item.quantity, 0), 0);
+    const executorSigner = signerName(organization);
+    const clientSigner = signerName(client);
     return printableShell(
       documentTitle('act', work),
       `<main class="doc-page">
-        <h1 class="title">Акт выполненных работ (оказанных услуг) № ${html(work.actNumber || '-')} от ${displayDate(work.actDate)} г.</h1>
-        <p class="party"><b>Исполнитель:</b> ${html(partyLine(organization))}</p>
-        <p class="party"><b>Заказчик:</b> ${html(partyLine(client))}</p>
-        <p class="party"><b>Договор:</b> ${html(client.contract || '-')}</p>
-        <table>
-          <thead><tr><th style="width:36px">№</th><th>Наименование услуги</th><th style="width:90px">Количество</th><th style="width:100px">Цена</th><th style="width:110px">Сумма</th></tr></thead>
-          <tbody>${printableRows(work)}</tbody>
+        <h1 class="act-title">Акт выполненных работ (оказанных услуг) № ${html(work.actNumber || '-')} от ${displayDate(work.actDate)} г.</h1>
+        <p class="labeled"><b>Исполнитель:</b> ${html(partyLine(organization))}</p>
+        <p class="labeled"><b>Заказчик:</b> ${html(partyLine(client))}</p>
+        <p class="labeled"><b>Договор:</b> ${html(client.contract || '-')}</p>
+        <table class="work-table" style="margin-top:7mm">
+          <colgroup><col><col style="width:32mm"><col style="width:30mm"><col style="width:31mm"></colgroup>
+          <thead><tr><th>Наименование услуги</th><th>Количество</th><th>Цена</th><th>Сумма</th></tr></thead>
+          <tbody>
+            ${work.items
+              .map(
+                (item) =>
+                  `<tr><td class="name">${html(item.name)}</td><td class="right">${quantityText(item.quantity)}</td><td class="right">${formatMoney(item.price)}</td><td class="right">${formatMoney(item.amount)}</td></tr>`
+              )
+              .join('')}
+          </tbody>
           <tfoot class="totals">
-            <tr><td colspan="4" class="right">Итого:</td><td class="right">${formatMoney(total)}</td></tr>
-            <tr><td colspan="4" class="right">Без налога (НДС):</td><td class="right">-</td></tr>
+            <tr><td colspan="3" class="right">Итого:</td><td class="right">${formatMoney(total)}</td></tr>
+            <tr><td colspan="3" class="right">Без налога (НДС):</td><td class="right">-</td></tr>
           </tfoot>
         </table>
         <p class="summary">Всего оказано услуг: ${quantityText(totalQuantity)}, на сумму: ${formatMoney(total)} руб.</p>
         <p class="summary bold">Всего к оплате: ${html(amountToWords(total))}</p>
         <p class="summary">Вышеперечисленные услуги выполнены полностью и в срок. Заказчик претензий по объему, качеству и срокам оказания услуг не имеет.</p>
-        <section class="signatures">
-          <div class="sign-box"><b>Исполнитель</b><div class="sign-line">${html(signerName(organization))}</div></div>
-          <div class="sign-box"><b>Заказчик</b><div class="sign-line">${html(signerName(client))}</div></div>
+        <section class="sign-grid">
+          <div><b>Исполнитель:</b><div class="sign-row">_____________ ${html(executorSigner)}</div></div>
+          <div><b>Заказчик:</b><div class="sign-row">_____________ ${html(clientSigner)}</div></div>
         </section>
       </main>`
     );
@@ -466,69 +558,144 @@
   const updDocument = (work, organization, client) => {
     const total = totalWorkAmount(work.items);
     const invoiceNumber = work.invoiceNumber || work.actNumber || '-';
+    const invoiceDate = displayDate(work.invoiceDate || work.actDate);
+    const seller = organization.shortName || organization.name || '-';
+    const buyer = client.name || '-';
+    const sellerSigner = personShortName(signerName(organization)) || seller;
+    const buyerSigner = personShortName(client.signerName) || (client.isPhysicalPerson ? personShortName(client.name) : '');
+    const registrationDetails = organization.registrationDetails || DEFAULT_IP_REGISTRATION_DETAILS;
+    const updColumns = [24.3, 6.3, 26.4, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 12, 12, 12, 21.1, 15.8, 12, 23.6, 13.4];
+    const updColGroup = `<colgroup>${updColumns.map((width) => `<col style="width:${width}mm">`).join('')}</colgroup>`;
+    const updCodes = ['Б', '1', '1а', '1б', '2', '2а', '3', '4', '5', '6', '7', '8', '9', '10', '10а', '11', '12', '12а', '13', '14'];
+    const updItemRows = work.items
+      .map(
+        (item, index) => `<tr class="item-row">
+          <td>-</td><td class="center">${index + 1}</td><td>${html(item.name)}</td><td class="center">-</td>
+          <td class="center">796</td><td class="center">шт</td><td class="right">${quantityText(item.quantity)}</td>
+          <td class="right">${formatMoney(item.price)}</td><td class="right">${formatMoney(item.amount)}</td>
+          <td class="center">без акциза</td><td class="center">без НДС</td><td class="center">без НДС</td>
+          <td class="right">${formatMoney(item.amount)}</td><td class="center">-</td><td class="center">-</td><td class="center">-</td>
+          <td class="center">-</td><td class="center">-</td><td class="right">-</td><td class="right">-</td>
+        </tr>`
+      )
+      .join('');
     return printableShell(
       documentTitle('upd', work),
       `<main class="doc-page landscape upd">
-        <section class="top">
-          <div class="side">
-            <b>Универсальный<br>передаточный<br>документ</b><br><br>
-            Статус <span class="status">2</span><br><br>
-            1 - счет-фактура<br>и передаточный<br>документ (акт)<br>
-            2 - передаточный<br>документ (акт)<br>
-            3 - счет-фактура
+        <section class="upd-top">
+          <div class="upd-side">
+            <span class="upd-side-title">Универсальный<br>передаточный<br>документ</span>
+            Статус <span class="upd-status">2</span>
+            <div class="upd-legend">
+              1 - счет-фактура<br>и передаточный<br>документ (акт)<br>
+              2 - передаточный<br>документ (акт)<br>
+              3 - счет-фактура
+            </div>
           </div>
-          <div>
+          <div class="upd-lines">
             ${[
-              ['Счет-фактура N', `${invoiceNumber} от ${displayDate(work.invoiceDate)}` , '(1)'],
+              ['Счет-фактура N', `${invoiceNumber} от ${invoiceDate}` , '(1)'],
               ['Исправление N', '- от -', '(1а)'],
-              ['Продавец:', organization.name || '-', '(2)'],
+              ['Продавец:', seller, '(2)'],
               ['Адрес:', organization.address || '-', '(2а)'],
-              ['ИНН/КПП продавца:', innKpp(organization) || '-', '(2б)'],
+              ['ИНН/КПП продавца:', rawInnKpp(organization), '(2б)'],
               ['Грузоотправитель и его адрес:', 'он же', '(3)'],
               ['Грузополучатель и его адрес:', '-', '(4)'],
-              ['Документ об отгрузке:', `УПД № ${invoiceNumber} от ${displayDate(work.invoiceDate)}`, '(5а)'],
-              ['Покупатель:', client.name || '-', '(6)'],
+              ['К платежно-расчетному документу №', '', '(5)'],
+              ['Документ об отгрузке:', shipmentDocumentLine(work), '(5а)'],
+              ['Покупатель:', buyer, '(6)'],
               ['Адрес:', client.address || '-', '(6а)'],
-              ['ИНН/КПП покупателя:', innKpp(client) || '-', '(6б)'],
-              ['Валюта: наименование, код', 'Российский рубль, 643', '(7)']
+              ['ИНН/КПП покупателя:', rawInnKpp(client), '(6б)'],
+              ['Валюта: наименование, код', 'Российский рубль, 643', '(7)'],
+              ['Идентификатор государственного контракта, договора (соглашения)(при наличии):', '', '(8)']
             ]
-              .map(([label, value, code]) => `<div class="upd-line"><b>${html(label)}</b><span class="upd-value">${html(value)}</span><span>${html(code)}</span></div>`)
+              .map(
+                ([label, value, code]) =>
+                  `<div class="upd-line"><b>${html(label)}</b><span class="upd-value">${html(value)}</span><span class="upd-code">${html(code)}</span></div>`
+              )
               .join('')}
           </div>
-          <div class="fns">
+          <div class="upd-note">
             Приложение № 1 к постановлению Правительства Российской Федерации<br>
             от 26 декабря 2011 года № 1137<br>
             (в ред. Постановления Правительства РФ от 23.01.2026 № 26)
           </div>
         </section>
-        <table>
+        <table class="upd-items">
+          ${updColGroup}
           <thead>
             <tr>
-              <th rowspan="2">№<br>п/п</th><th rowspan="2">Наименование товара<br>(описание выполненных работ, оказанных услуг)</th>
-              <th colspan="2">Единица измерения</th><th rowspan="2">Количество</th><th rowspan="2">Цена</th>
-              <th rowspan="2">Стоимость без налога</th><th rowspan="2">В том числе акциз</th><th rowspan="2">Налоговая ставка</th>
-              <th rowspan="2">Сумма налога</th><th rowspan="2">Стоимость с налогом</th><th colspan="2">Страна происхождения товара</th>
-              <th rowspan="2">Рег. номер декларации</th>
+              <th rowspan="3">Код товара/<br>работ,<br>услуг</th><th rowspan="3">№<br>п/п</th>
+              <th rowspan="3">Наименование товара<br>(описание выполненных<br>работ, оказанных услуг),<br>имущественного права</th>
+              <th rowspan="3">Код<br>вида<br>товара</th><th colspan="2">Единица<br>измерения</th>
+              <th rowspan="3">Количе-<br>ство<br>(объем)</th><th rowspan="3">Цена<br>(тариф)<br>за единицу<br>измерения</th>
+              <th rowspan="3">Стоимость товаров<br>(работ, услуг),<br>имущественных прав<br>без налога - всего</th>
+              <th rowspan="3">В том<br>числе<br>сумма<br>акциза</th><th rowspan="3">Налоговая<br>ставка</th>
+              <th rowspan="3">Сумма налога,<br>предъявляемая<br>покупателю</th>
+              <th rowspan="3">Стоимость товаров<br>(работ, услуг),<br>имущественных прав<br>с налогом - всего</th>
+              <th colspan="2">Страна происхождения<br>товара</th>
+              <th rowspan="3">Регистрационный<br>номер декларации<br>на товары или<br>регистрационный<br>номер партии товара,<br>подлежащего<br>прослеживаемости</th>
+              <th colspan="2">Единица<br>измерения товара,<br>используемая<br>в целях осуществления<br>прослеживаемости</th>
+              <th rowspan="3">Количество товара,<br>подлежащего<br>прослеживаемости</th>
+              <th rowspan="3">Стоимость товара,<br>подлежащего<br>прослеживаемости,<br>без НДС</th>
             </tr>
-            <tr><th>код</th><th>условное обозначение</th><th>код</th><th>краткое наименование</th></tr>
+            <tr>
+              <th>код</th><th>услов-<br>ное<br>обозна-<br>чение<br>(нацио-<br>наль-<br>ное)</th>
+              <th>цифровой<br>код</th><th>краткое<br>наиме-<br>нование</th>
+              <th>код</th><th>условное<br>обозначение</th>
+            </tr>
+            <tr class="code-row">${updCodes.map((code) => `<th>${html(code)}</th>`).join('')}</tr>
           </thead>
           <tbody>
-            ${work.items
-              .map(
-                (item, index) => `<tr><td class="center">${index + 1}</td><td>${html(item.name)}</td><td class="center">796</td><td class="center">шт</td><td class="right">${quantityText(item.quantity)}</td><td class="right">${formatMoney(item.price)}</td><td class="right">${formatMoney(item.amount)}</td><td class="center">без акциза</td><td class="center">без НДС</td><td class="right">0,00</td><td class="right">${formatMoney(item.amount)}</td><td></td><td></td><td></td></tr>`
-              )
-              .join('')}
-            <tr class="totals"><td colspan="6" class="right">Всего к оплате</td><td class="right">${formatMoney(total)}</td><td></td><td></td><td class="right">0,00</td><td class="right">${formatMoney(total)}</td><td colspan="3"></td></tr>
+            ${updItemRows}
+            <tr class="total-row"><td></td><td colspan="7" class="center">Всего к оплате (9)</td><td class="right">${formatMoney(total)}</td><td class="center">Х</td><td class="center">Х</td><td class="center">без<br>НДС</td><td class="right">${formatMoney(total)}</td><td colspan="7"></td></tr>
           </tbody>
         </table>
-        <section class="upd-transfer">
-          <div class="upd-line"><b>Документ об отгрузке, передаче</b><span class="upd-value">УПД № ${html(invoiceNumber)} от ${displayDate(work.invoiceDate)}</span><span>(9)</span></div>
-          <div class="upd-line"><b>Иные сведения об отгрузке, передаче</b><span class="upd-value">Услуги оказаны в полном объеме</span><span>(13)</span></div>
-          <div class="upd-line"><b>Ответственный за правильность оформления факта хозяйственной жизни</b><span class="upd-value">${html(signerName(organization))}</span><span>(15)</span></div>
+      </main>
+      <main class="doc-page landscape upd upd-transfer-page">
+        <section class="upd-transfer-head">
+          <div>
+            <div><b>Руководитель организации<br>или иное уполномоченное лицо</b></div>
+            <div class="transfer-hint" style="margin-top:4mm">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________</div>
+            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)</div>
+            <div style="margin-top:4mm"><b>Индивидуальный предприниматель<br>или иное уполномоченное лицо</b></div>
+            <div class="transfer-hint">${html(sellerSigner)}</div>
+            <div class="transfer-hint">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${html(registrationDetails)}</div>
+            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(реквизиты свидетельства о государственной регистрации индивидуального предпринимателя)</div>
+          </div>
+          <div>
+            <div><b>Главный бухгалтер<br>или иное уполномоченное лицо</b></div>
+            <div class="transfer-hint" style="margin-top:4mm">____________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________</div>
+            <div class="transfer-hint">(подпись)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(ф.и.о.)</div>
+          </div>
         </section>
-        <section class="signatures">
-          <div class="sign-box"><b>Индивидуальный предприниматель или иное уполномоченное лицо</b><div class="sign-line">${html(signerName(organization))}</div></div>
-          <div class="sign-box"><b>Ответственный за правильность оформления со стороны покупателя</b><div class="sign-line">${html(signerName(client))}</div></div>
+        <div class="transfer-line"><span class="line-label">Основание передачи (сдачи) / получения (приемки)</span><span class="value">${html(documentBasis(work))}</span><span class="upd-code">(10)</span></div>
+        <div class="transfer-hint" style="margin-left:68mm">(договор; доверенность и др.)</div>
+        <div class="transfer-line"><span class="line-label">Данные о транспортировке и грузе</span><span class="value">Услуги оказаны, груз и транспортировка отсутствуют</span><span class="upd-code">(11)</span></div>
+        <div class="transfer-hint" style="margin-left:68mm">(транспортная накладная, поручение экспедитору, экспедиторская / складская расписка и др.)</div>
+        <section class="transfer-sides">
+          <section>
+            <div class="mini-line"><span class="line-label">Товар (груз) передал / услуги,<br>результаты работ, права сдал</span><span class="value">${html(sellerSigner)}</span><span class="upd-code">(12)</span></div>
+            <div class="transfer-hint">(должность, подпись, ф.и.о.)</div>
+            <div class="mini-line"><span class="line-label">Дата отгрузки,<br>передачи</span><span class="value">${updDateText(work.actDate || work.invoiceDate)}</span><span class="upd-code">(13)</span></div>
+            <div class="transfer-hint">(дата)</div>
+            <div class="mini-line"><span class="line-label">Иные сведения<br>об отгрузке, передаче</span><span class="value">Услуги оказаны в полном объеме</span><span class="upd-code">(14)</span></div>
+            <div class="mini-line"><span class="line-label">Ответственный за правильность<br>оформления факта<br>хозяйственной жизни</span><span class="value">${html(sellerSigner)}</span><span class="upd-code">(15)</span></div>
+            <div class="transfer-hint">(должность, подпись, ф.и.о.)</div>
+            <div class="mini-line"><span class="line-label">Наименование экономического<br>субъекта - составителя<br>документа</span><span class="value">${html(`${seller}, ИНН ${organization.inn || '-'}`)}</span><span class="upd-code">(16)</span></div>
+            <div class="stamp">(М.П.)</div>
+          </section>
+          <section>
+            <div class="mini-line"><span class="line-label">Товар (груз) получил / услуги,<br>результаты работ, права принял</span><span class="value">${html(buyerSigner)}</span><span class="upd-code">(17)</span></div>
+            <div class="transfer-hint">(должность, подпись, ф.и.о.)</div>
+            <div class="mini-line"><span class="line-label">Дата получения<br>(приемки)</span><span class="value"></span><span class="upd-code">(18)</span></div>
+            <div class="transfer-hint">(дата)</div>
+            <div class="mini-line"><span class="line-label">Иные сведения<br>о получении, приемке</span><span class="value"></span><span class="upd-code">(19)</span></div>
+            <div class="mini-line"><span class="line-label">Ответственный за правильность<br>оформления факта<br>хозяйственной жизни</span><span class="value">${html(buyerSigner)}</span><span class="upd-code">(20)</span></div>
+            <div class="transfer-hint">(должность, подпись, ф.и.о.)</div>
+            <div class="mini-line"><span class="line-label">Наименование экономического<br>субъекта - составителя<br>документа</span><span class="value">${html(`${buyer}, ИНН ${client.inn || '-'}`)}</span><span class="upd-code">(21)</span></div>
+            <div class="stamp">(М.П.)</div>
+          </section>
         </section>
       </main>`,
       'landscape'
