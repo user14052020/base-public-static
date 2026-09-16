@@ -541,7 +541,8 @@
       .sign-row { margin-top: 8mm; }
       .upd { font-size: 6.1pt; line-height: 1.08; }
       .upd-top { position: relative; display: grid; grid-template-columns: 24.3mm 1fr; align-items: start; }
-      .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 1.5px solid #111; }
+      .doc-page.landscape.upd { height: 210mm; min-height: 0; overflow: hidden; }
+      .upd-side { min-height: 63mm; padding: 1mm 2mm 0 1mm; border-right: 0.5px solid #111; }
       .upd-side-title { display: block; margin-bottom: 6mm; font-weight: 700; font-size: 6.1pt; }
       .upd-status { display: inline-grid; place-items: center; width: 7mm; height: 5.5mm; margin-left: 2mm; border: 1px solid #111; font-size: 8pt; font-weight: 700; }
       .upd-legend { margin-top: 5mm; }
@@ -558,7 +559,7 @@
       .upd-code { text-align: right; }
       .upd-prepayment-line { display: grid; grid-template-columns: 1fr 8mm; align-items: end; min-height: 7mm; margin-top: 1mm; border-bottom: 1px solid #111; font-size: 5.5pt; }
       .upd-items { margin-top: 12.8mm; }
-      .upd-items th, .upd-items td { padding: 0.8mm 0.7mm; font-size: 5pt; line-height: 1.06; overflow-wrap: anywhere; }
+      .upd-items th, .upd-items td { border-width: 0.5px; padding: 0.8mm 0.7mm; font-size: 5pt; line-height: 1.06; overflow-wrap: anywhere; }
       .upd-items thead th { text-align: center; vertical-align: middle; font-weight: 700; }
       .upd-items .upd-header-main > th { height: 21.7mm; min-height: 21.7mm; }
       .upd-items .upd-header-sub > th { height: 26.2mm; min-height: 26.2mm; }
@@ -570,7 +571,7 @@
       .upd-footer span:nth-child(2) { text-align: center; }
       .upd-footer span:nth-child(3) { text-align: right; }
       .upd-transfer-page { font-size: 5.8pt; line-height: 1.08; padding-top: 0; }
-      .upd-transfer-head { margin-left: 24.3mm; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; min-height: 22mm; padding: 4mm 0 2mm 4mm; }
+      .upd-transfer-head { margin-left: 24.3mm; border-left: 0.5px solid #111; border-bottom: 0.5px solid #111; min-height: 22mm; padding: 4mm 0 2mm 4mm; }
       .upd-sign-grid { display: grid; grid-template-columns: 48mm 1.5mm 53.7mm 73.3mm 3.3mm 43mm 1.2mm 17.2mm 14.4mm; row-gap: 3mm; align-items: end; }
       .upd-sign-label { align-self: center; font-size: 5.8pt; font-weight: 700; }
       .upd-sign-field { position: relative; min-height: 4mm; border-bottom: 1px solid #111; text-align: center; }
