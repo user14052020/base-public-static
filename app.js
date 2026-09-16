@@ -492,7 +492,7 @@
       .upd-legend { margin-top: 5mm; }
       .upd-note { position: absolute; top: 5mm; right: 0; width: 78mm; text-align: right; }
       .upd-lines { padding: 21mm 1.5mm 0 4mm; }
-      .upd-invoice-lines { width: 94mm; }
+      .upd-invoice-lines { width: 88mm; }
       .upd-party-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; margin-top: 1.2mm; }
       .upd-line { display: grid; grid-template-columns: 38mm 1fr 8mm; align-items: end; min-height: 3.35mm; }
       .upd-line.wide-label { grid-template-columns: 49mm 1fr 8mm; }
