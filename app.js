@@ -76,6 +76,57 @@
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, reviveMongo(item)]));
   };
 
+  const dateFieldsByCollection = {
+    clients: ['createdAt', 'updatedAt'],
+    files: ['createdAt', 'updatedAt'],
+    organizations: ['createdAt', 'updatedAt'],
+    sequences: ['createdAt', 'updatedAt'],
+    users: ['createdAt', 'updatedAt'],
+    works: ['actDate', 'invoiceDate', 'createdAt', 'updatedAt'],
+    'uploads.files': ['uploadDate']
+  };
+  const idFieldsByCollection = {
+    clients: ['_id', 'files'],
+    files: ['_id', 'bucketId'],
+    organizations: ['_id', 'files'],
+    users: ['_id'],
+    works: ['_id', 'executorOrganizationId', 'clientId'],
+    'uploads.files': ['_id'],
+    'uploads.chunks': ['_id', 'files_id']
+  };
+  const mongoId = (value) => ({ $oid: idOf(value) || uid() });
+  const mongoDate = (value) => {
+    const date = parseDate(value) || new Date();
+    return { $date: date.toISOString() };
+  };
+  const serializeBackupValue = (value) => {
+    if (Array.isArray(value)) return value.map(serializeBackupValue);
+    if (!value || typeof value !== 'object') return value;
+    if (value.$oid || value.$date || value.$binary) return value;
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serializeBackupValue(item)]));
+  };
+  const serializeBackupDocument = (collectionName, document) => {
+    const serialized = serializeBackupValue(document);
+    if (!serialized || typeof serialized !== 'object' || Array.isArray(serialized)) return serialized;
+
+    for (const field of idFieldsByCollection[collectionName] || []) {
+      if (!(field in serialized)) continue;
+      serialized[field] = Array.isArray(serialized[field])
+        ? serialized[field].filter(Boolean).map(mongoId)
+        : mongoId(serialized[field]);
+    }
+
+    for (const field of dateFieldsByCollection[collectionName] || []) {
+      if (field in serialized) serialized[field] = mongoDate(serialized[field]);
+    }
+
+    if (collectionName === 'uploads.chunks' && typeof serialized.data === 'string') {
+      serialized.data = { $binary: serialized.data, $type: '0' };
+    }
+
+    return serialized;
+  };
+
   const normalizeItem = (item) => {
     const quantity = Math.max(0, toNumber(item.quantity, 1));
     const price = Math.max(0, toNumber(item.price, 0));
@@ -136,6 +187,7 @@
     organizations: (collections.organizations || []).map(normalizeOrganization),
     clients: (collections.clients || []).map(normalizeClient),
     works: (collections.works || []).map(normalizeWork),
+    sequences: collections.sequences || [],
     users: collections.users || [],
     files: collections.files || [],
     uploadsFiles: collections['uploads.files'] || [],
@@ -1177,23 +1229,33 @@
     `);
   };
 
-  const backupPayload = () => ({
-    meta: {
-      createdAt: new Date().toISOString(),
-      database: 'offers-base-static',
-      collections: ['clients', 'files', 'organizations', 'sequences', 'users', 'works', 'uploads.chunks', 'uploads.files']
-    },
-    collections: {
+  const backupPayload = () => {
+    const collections = {
       clients: state.db.clients,
       files: state.db.files || [],
       organizations: state.db.organizations,
-      sequences: [],
+      sequences: state.db.sequences || [],
       users: state.db.users || [],
       works: state.db.works,
       'uploads.chunks': state.db.uploadsChunks || [],
       'uploads.files': state.db.uploadsFiles || []
-    }
-  });
+    };
+    const collectionNames = ['clients', 'files', 'organizations', 'sequences', 'users', 'works', 'uploads.chunks', 'uploads.files'];
+
+    return {
+      meta: {
+        createdAt: new Date().toISOString(),
+        database: 'offers-base-static',
+        collections: collectionNames
+      },
+      collections: Object.fromEntries(
+        collectionNames.map((name) => [
+          name,
+          (collections[name] || []).map((document) => serializeBackupDocument(name, document))
+        ])
+      )
+    };
+  };
 
   const download = (blob, filename) => {
     const url = URL.createObjectURL(blob);
@@ -1228,7 +1290,7 @@
 
   const restoreBackup = async (file) => {
     const text = await readBackupFile(file);
-    const payload = JSON.parse(text);
+    const payload = reviveMongo(JSON.parse(text));
     const collections = payload.collections || {};
     state.db = dbFromCollections(collections, { restoredAt: new Date().toISOString() });
     saveDb();
