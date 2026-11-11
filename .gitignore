@@ -1,0 +1,5 @@
+/desktop/**/bin/
+/desktop/**/obj/
+/desktop-out/
+*.publish-*.tmp
+*.payments-*.tmp

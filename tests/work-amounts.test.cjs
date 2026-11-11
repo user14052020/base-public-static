@@ -76,7 +76,7 @@ const loadApp = () => {
   const source = readFileSync(join(__dirname, '../app.js'), 'utf8');
   const listeners = {};
   const context = {
-    window: { OffersWorkAmounts: amounts, location: { href: 'https://example.test/' } },
+    window: { OffersWorkAmounts: amounts, OffersWorkPayments: require('../work-payments.js'), location: { href: 'https://example.test/' } },
     document: { getElementById: () => ({}), addEventListener: (name, handler) => { listeners[name] = handler; } },
     sessionStorage: { getItem: () => null },
     localStorage: { setItem: () => {} },
@@ -133,6 +133,8 @@ const makeForm = () => {
     source: { value: 'document' },
     creditedAmount: { value: '25000' },
     isPayed: { checked: true },
+    paymentAmount: { value: '' },
+    paymentDate: { value: '' },
     executorOrganizationId: { value: 'bbbbbbbbbbbbbbbbbbbbbbbb' },
     clientId: { value: 'cccccccccccccccccccccccc' },
     actNumber: { value: '' }, invoiceNumber: { value: '' },

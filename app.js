@@ -9,6 +9,7 @@
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
   const { normalizeUpdAmount, getUpdAmount, getUpdItems } = window.OffersWorkAmounts;
+  const { paymentAmount, paymentDate, paymentDetails } = window.OffersWorkPayments;
 
   const app = document.getElementById('app');
   const state = {
@@ -158,7 +159,7 @@
       amount,
       updAmount: normalizeUpdAmount(work.updAmount),
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
-      isPayed: Boolean(work.isPayed),
+      ...paymentDetails({ ...work, amount }),
       currency: work.currency || 'RUB',
       source,
       sourceName: work.sourceName || (source === 'kwork' ? 'Kwork' : 'Счет/акт'),
@@ -228,7 +229,9 @@
   const seedDb = async (password) => {
     const seed = reviveMongo(await decryptSeed(password));
     const collections = seed.collections || {};
-    return dbFromCollections(collections, { createdAt: new Date().toISOString(), source: 'seed' });
+    return dbFromCollections(collections, {
+      createdAt: new Date().toISOString(), source: 'seed', seedRevision: window.__OFFERS_SEED_ENCRYPTED__?.revision || null
+    });
   };
 
   const loadStoredDb = () => {
@@ -911,6 +914,14 @@
         </nav>
       </header>
       <main class="content">
+        ${window.__OFFERS_SEED_ENCRYPTED__?.revision && state.db?.meta?.seedRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision ? `
+          <section class="panel stack">
+            <strong>Опубликован новый бекап</strong>
+            <form class="row" data-form="published-backup">
+              ${state.password ? '' : '<input name="password" type="password" autocomplete="current-password" placeholder="Пароль" required style="max-width:260px" />'}
+              <button type="submit">Загрузить опубликованные данные</button>
+            </form>
+          </section>` : ''}
         ${state.message ? `<div class="message ${state.message.type}">${html(state.message.text)}</div>` : ''}
         ${content}
       </main>
@@ -967,7 +978,7 @@
             <thead>
               <tr>
                 <th>Дата</th><th>Позиции</th><th>Организация</th><th>Клиент</th><th>Документы</th>
-                <th>Источник</th><th>Сумма</th><th>Зачислено</th><th>Оплачено</th><th>Действия</th>
+                <th>Источник</th><th>Сумма</th><th>Зачислено</th><th>Дата платежа</th><th>Сумма платежа</th><th>Оплачено</th><th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -983,6 +994,8 @@
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
                   <td>${formatMoney(work.amount)} ${html(work.currency || 'RUB')}</td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
+                  <td>${work.paymentDate ? displayDate(work.paymentDate) : '—'}</td>
+                  <td>${work.paymentAmount == null ? '—' : `${formatMoney(work.paymentAmount)} ${html(work.currency || 'RUB')}`}</td>
                   <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : 'Нет'}</label></td>
                   <td>
                     <div class="row">
@@ -1007,6 +1020,8 @@
     items: [{ name: '', quantity: 1, price: 0 }],
     creditedAmount: 0,
     updAmount: null,
+    paymentAmount: null,
+    paymentDate: null,
     isPayed: false,
     currency: 'RUB',
     source: 'document',
@@ -1051,6 +1066,8 @@
             <label>Сумма документа<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
             <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
             <label>Сумма зачисления<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount || work.amount || 0)}" /></label>
+            <label>Дата платежа<input name="paymentDate" type="date" value="${html(work.paymentDate || '')}" /></label>
+            <label>Сумма платежа<input name="paymentAmount" type="number" min="0" step="0.01" value="${html(work.paymentAmount ?? '')}" /></label>
             <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''}/> Оплачено</span></label>
           </div>
           <div class="stack">
@@ -1099,11 +1116,15 @@
     const existingId = form._id.value;
     const year = documentDate.getFullYear();
     const source = form.source.value === 'kwork' ? 'kwork' : 'document';
+    const existingWork = state.db.works.find((work) => work._id === existingId);
     const payload = normalizeWork({
+      ...existingWork,
       _id: existingId || uid(),
       items,
       amount,
       updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
+      paymentAmount: paymentAmount(form.paymentAmount.value),
+      paymentDate: paymentDate(form.paymentDate.value),
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
       isPayed: form.isPayed.checked,
       currency: 'RUB',
@@ -1627,6 +1648,19 @@
         render();
         return;
       }
+      if (form.dataset.form === 'published-backup') {
+        const password = state.password || form.password.value;
+        if (!(await verifyPassword(password))) throw new Error('Неверный пароль');
+        if (!confirm('Заменить локальные данные опубликованным бекапом? Несохраненные в бекап изменения будут потеряны.')) return;
+        const published = await seedDb(password);
+        state.db = published;
+        state.password = password;
+        state.editingWorkId = null;
+        state.editingClientId = null;
+        saveDb();
+        showMessage('Опубликованный бекап загружен');
+        return;
+      }
       if (form.dataset.form === 'work') saveWorkFromForm(form);
       if (form.dataset.form === 'client') saveClientFromForm(form);
     } catch (error) {
@@ -1643,6 +1677,15 @@
     if (target.name === 'updAmount') {
       target.dataset.auto = target.value === '' ? 'true' : 'false';
       updateWorkTotals(target.closest('form'));
+    }
+    if (target.name === 'paymentAmount') {
+      const form = target.closest('form');
+      const details = paymentDetails({ amount: totalWorkAmount(Array.from(form.querySelectorAll('[data-item-row]')).map((row) => ({
+        name: row.querySelector('[name="itemName"]').value,
+        quantity: row.querySelector('[name="itemQuantity"]').value,
+        price: row.querySelector('[name="itemPrice"]').value
+      }))), paymentAmount: target.value, isPayed: form.isPayed.checked });
+      form.isPayed.checked = details.isPayed;
     }
     if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');
@@ -1690,6 +1733,8 @@
       if (action === 'toggle-paid') {
         const work = state.db.works.find((item) => item._id === target.dataset.id);
         if (work) {
+          work.paymentAmount = target.checked ? work.amount : 0;
+          work.paymentDate = target.checked ? work.paymentDate || todayInput() : null;
           work.isPayed = target.checked;
           saveDb();
           renderWorks();

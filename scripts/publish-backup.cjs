@@ -161,6 +161,7 @@ const publishBackup = async ({ backupPath, password, repoDir = resolve(__dirname
   const encrypted = encryptSeed(payload, secret, currentSeed.iterations);
   if (!isDeepStrictEqual(decryptSeed(encrypted, secret), payload)) throw new Error('Encrypted backup verification failed.');
   const revision = createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 16);
+  encrypted.revision = revision;
   const contents = [serializeSeed(encrypted), updateSeedVersion(originals[1].toString('utf8'), revision)];
   let committed = false;
   try {

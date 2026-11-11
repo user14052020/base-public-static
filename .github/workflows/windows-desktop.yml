@@ -1,0 +1,56 @@
+name: Windows Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'scripts/**'
+      - 'work-payments.js'
+      - 'tests/**'
+      - '.github/workflows/windows-desktop.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-desktop
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test backend and backups
+        run: node --test tests/*.test.cjs
+      - name: Publish Windows application
+        run: dotnet publish desktop/OffersBase.Desktop/OffersBase.Desktop.csproj -c Release -r win-x64 --self-contained true -o desktop-out
+      - name: Package portable application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop-out/runtime | Out-Null
+          Copy-Item (Get-Command node).Source desktop-out/runtime/node.exe
+          Copy-Item scripts desktop-out/scripts -Recurse
+          Copy-Item work-payments.js,xlsx.full.min.js desktop-out/
+          Copy-Item desktop/README.md desktop-out/README.md
+          Compress-Archive -Path desktop-out/* -DestinationPath OffersBaseDesktop-win-x64.zip
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view desktop-latest 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create desktop-latest --title 'Offers Base for Windows' --notes 'Portable Windows application. Git and an SSH key with repository access are required.' --target main
+          }
+          gh release upload desktop-latest OffersBaseDesktop-win-x64.zip --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit desktop-latest --notes "Portable Windows application. Build: $env:GITHUB_SHA. Git and an SSH key with repository access are required."
