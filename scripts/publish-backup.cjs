@@ -137,7 +137,9 @@ const publishBackup = async ({ backupPath, password, repoDir = resolve(__dirname
   }
   const payload = readBackup(backupFile);
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  if (relative(realpathSync(git('rev-parse', '--show-toplevel')), root) !== '') throw new Error('The script must belong to the repository root.');
+  if (git('rev-parse', '--is-inside-work-tree') !== 'true' || git('rev-parse', '--show-prefix') !== '') {
+    throw new Error('Select the repository root, not a nested folder.');
+  }
   if (git('branch', '--show-current') !== 'main') throw new Error('Switch to the main branch before publishing.');
   if (git('status', '--porcelain')) throw new Error('The working tree is not clean. Commit or move your changes first.');
   git('var', 'GIT_AUTHOR_IDENT');
