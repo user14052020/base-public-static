@@ -30,7 +30,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Test backend and backups
-        run: node --test tests/*.test.cjs
+        shell: pwsh
+        run: |
+          node --test *> test-results.txt
+          $code = $LASTEXITCODE
+          Get-Content test-results.txt
+          if ($code -ne 0) {
+            $message = (Get-Content test-results.txt -Raw).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$message"
+            exit $code
+          }
       - name: Publish Windows application
         run: dotnet publish desktop/OffersBase.Desktop/OffersBase.Desktop.csproj -c Release -r win-x64 --self-contained true -o desktop-out
       - name: Package portable application

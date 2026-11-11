@@ -38,6 +38,7 @@ const fixture = (t) => {
   mkdirSync(repoDir);
   const git = (...args) => execFileSync('git', args, { cwd: repoDir, encoding: 'utf8', stdio: 'pipe' }).trim();
   git('init', '--initial-branch=main');
+  git('config', 'core.autocrlf', 'false');
   git('config', 'user.name', 'Backup test');
   git('config', 'user.email', 'fixture@example.test');
   const original = payload();
