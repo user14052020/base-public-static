@@ -8,6 +8,7 @@
     iterations: 250000
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
+  const { normalizeUpdAmount, getUpdAmount, getUpdItems } = window.OffersWorkAmounts;
 
   const app = document.getElementById('app');
   const state = {
@@ -155,6 +156,7 @@
       clientId: idOf(work.clientId),
       items,
       amount,
+      updAmount: normalizeUpdAmount(work.updAmount),
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
       isPayed: Boolean(work.isPayed),
       currency: work.currency || 'RUB',
@@ -317,6 +319,14 @@
   const updateWorkItemAmount = (row) => {
     const amountInput = row?.querySelector('[data-item-amount]');
     if (amountInput) amountInput.value = formatMoney(workItemAmountFromRow(row));
+  };
+  const updateWorkTotals = (form) => {
+    if (!form) return;
+    const amount = Array.from(form.querySelectorAll('[data-item-row]'))
+      .filter((row) => normalizeText(row.querySelector('[name="itemName"]').value))
+      .reduce((sum, row) => sum + workItemAmountFromRow(row), 0);
+    form.querySelector('[data-work-total]').value = formatMoney(amount);
+    if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount }));
   };
   const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
   const getClient = (id) => state.db.clients.find((item) => item._id === id);
@@ -708,7 +718,8 @@
     );
   };
   const updDocument = (work, organization, client) => {
-    const total = totalWorkAmount(work.items);
+    const total = getUpdAmount(work);
+    const items = getUpdItems(work);
     const invoiceNumber = work.invoiceNumber || work.actNumber || '-';
     const invoiceDate = displayDate(work.invoiceDate || work.actDate);
     const seller = organization.shortName || organization.name || '-';
@@ -719,7 +730,7 @@
     const updColumns = [24.3, 6.3, 26.4, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 11.6, 12, 12, 12, 21.1, 15.8, 12, 23.6, 13.4];
     const updColGroup = `<colgroup>${updColumns.map((width) => `<col style="width:${width}mm">`).join('')}</colgroup>`;
     const updCodes = ['Б', '1', '1а', '1б', '2', '2а', '3', '4', '5', '6', '7', '8', '9', '10', '10а', '11', '12', '12а', '13', '14'];
-    const updItemRows = work.items
+    const updItemRows = items
       .map(
         (item, index) => `<tr class="item-row">
           <td>-</td><td class="center">${index + 1}</td><td>${html(item.name)}</td><td class="center">-</td>
@@ -995,6 +1006,7 @@
     _id: '',
     items: [{ name: '', quantity: 1, price: 0 }],
     creditedAmount: 0,
+    updAmount: null,
     isPayed: false,
     currency: 'RUB',
     source: 'document',
@@ -1010,6 +1022,7 @@
     if (state.editingWorkId === null) return '';
     const work = state.editingWorkId ? state.db.works.find((item) => item._id === state.editingWorkId) || emptyWork() : emptyWork();
     const items = work.items.length ? work.items : [{ name: '', quantity: 1, price: 0 }];
+    const amount = totalWorkAmount(items);
     return `
       <section class="panel stack">
         <div class="row between">
@@ -1035,6 +1048,8 @@
             </select></label>
             <label>Номер акта<input name="actNumber" value="${html(work.actNumber)}" /></label>
             <label>Номер счета<input name="invoiceNumber" value="${html(work.invoiceNumber)}" /></label>
+            <label>Сумма документа<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
+            <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
             <label>Сумма зачисления<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount || work.amount || 0)}" /></label>
             <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''}/> Оплачено</span></label>
           </div>
@@ -1088,6 +1103,7 @@
       _id: existingId || uid(),
       items,
       amount,
+      updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
       isPayed: form.isPayed.checked,
       currency: 'RUB',
@@ -1624,9 +1640,14 @@
       state.query = target.value;
       renderWorks();
     }
-    if (target.name === 'itemQuantity' || target.name === 'itemPrice') {
+    if (target.name === 'updAmount') {
+      target.dataset.auto = target.value === '' ? 'true' : 'false';
+      updateWorkTotals(target.closest('form'));
+    }
+    if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');
       if (row) updateWorkItemAmount(row);
+      updateWorkTotals(target.closest('form'));
     }
   });
 
@@ -1691,9 +1712,12 @@
         updateWorkItemAmount(row);
         row.querySelector('[data-action="remove-item"]').disabled = false;
         container.appendChild(row);
+        updateWorkTotals(container.closest('form'));
       }
       if (action === 'remove-item') {
+        const form = target.closest('form');
         target.closest('[data-item-row]').remove();
+        updateWorkTotals(form);
       }
       if (action === 'new-client') {
         state.editingClientId = '';
