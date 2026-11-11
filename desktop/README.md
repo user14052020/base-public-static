@@ -23,6 +23,7 @@ Saving creates a new backup; the input backup and bank workbook are never overwr
 For affected invoices, `creditedAmount` is the single payment amount and becomes the sum of linked bank payments.
 The old duplicate `paymentAmount` field is migrated automatically. The payment date becomes the latest
 receipt timestamp, including time when present in the export. Date-only sources remain date-only.
+Kwork works stay fully paid even when the received amount is below the document total because of commission.
 Existing manual payment totals require review and confirmation before replacement.
 Kwork works are not automatically linked to bank withdrawals from the platform.
 

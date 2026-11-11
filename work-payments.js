@@ -35,26 +35,19 @@
     const zone = time ? /(Z|[+-]\d{2}:\d{2})$/.exec(String(value))?.[1] || '' : '';
     return time ? `${date}T${time}${zone}` : date;
   };
-  const combinePaymentDateTime = (date, time, original) => {
-    if (!date) return null;
-    const next = paymentDateTime(`${date}${time ? `T${time}` : ''}`);
-    const previous = paymentDateTime(original);
-    const comparableTime = (value) => value && value.length === 5 ? `${value}:00` : value;
-    return previous && paymentDate(previous) === date && comparableTime(paymentTime(previous)) === comparableTime(time || null)
-      ? previous : next;
-  };
-  const isFullyPaid = (work, amount) => amount >= Math.round((work.amount || 0) * 100) / 100 && (amount > 0 || work.amount === 0);
+  const isFullyPaid = (work, amount) => work.source === 'kwork'
+    || amount >= Math.round((work.amount || 0) * 100) / 100 && (amount > 0 || work.amount === 0);
   const paymentDetails = (work) => {
     const legacyAmount = paymentAmount(work.paymentAmount);
     return {
       creditedAmount: legacyAmount ?? paymentAmount(work.creditedAmount) ?? work.amount ?? 0,
       paymentDate: paymentDateTime(work.paymentDate),
-      isPayed: legacyAmount === null ? Boolean(work.isPayed) : isFullyPaid(work, legacyAmount)
+      isPayed: work.source === 'kwork' || (legacyAmount === null ? Boolean(work.isPayed) : isFullyPaid(work, legacyAmount))
     };
   };
   const normalizePaymentFields = (work) => {
     const { paymentAmount: removed, ...rest } = work;
     return { ...rest, ...paymentDetails(work) };
   };
-  return { paymentAmount, paymentDate, paymentTime, paymentDateTime, combinePaymentDateTime, paymentDetails, normalizePaymentFields, isFullyPaid };
+  return { paymentAmount, paymentDate, paymentTime, paymentDateTime, paymentDetails, normalizePaymentFields, isFullyPaid };
 });

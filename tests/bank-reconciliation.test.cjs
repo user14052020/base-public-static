@@ -7,7 +7,7 @@ const { gzipSync } = require('node:zlib');
 const XLSX = require('../xlsx.full.min.js');
 const { readBackup } = require('../scripts/publish-backup.cjs');
 const { previewReconciliation, applyReconciliation, invoiceReferences } = require('../scripts/lib/bank-reconciliation.cjs');
-const { paymentDate, paymentDateTime, paymentDetails, normalizePaymentFields, combinePaymentDateTime } = require('../work-payments.js');
+const { paymentDate, paymentDateTime, paymentDetails, normalizePaymentFields } = require('../work-payments.js');
 
 const base = () => ({ collections: {
   clients: [{ _id: 'client', inn: '0012345678', name: 'Client', bankAccount: '00000000000000000001', customField: 'keep' }],
@@ -131,13 +131,19 @@ test('legacy duplicate payment amount migrates to creditedAmount without losing 
   assert.equal(normalizePaymentFields({ amount: 100, creditedAmount: 0, isPayed: false }).creditedAmount, 0);
 });
 
+test('Kwork works remain fully paid when the received amount is reduced by commission', () => {
+  const work = normalizePaymentFields({ source: 'kwork', amount: 50000, creditedAmount: 40000, isPayed: false });
+  assert.equal(work.isPayed, true);
+  assert.equal(work.creditedAmount, 40000);
+  assert.equal(normalizePaymentFields({ ...work, paymentAmount: 35000, isPayed: false }).isPayed, true);
+  assert.equal(paymentDetails({ amount: 50000, creditedAmount: 40000, isPayed: false }).isPayed, false);
+});
+
 test('receipt times and time zones are retained and date-only sources stay date-only', () => {
   assert.equal(paymentDateTime('11.11.2026 13:45:16'), '2026-11-11T13:45:16');
   assert.equal(paymentDateTime('2026-11-11T13:45:16+03:00'), '2026-11-11T13:45:16+03:00');
   assert.equal(paymentDateTime('2026-11-11'), '2026-11-11');
   assert.equal(paymentDateTime('2026-11-11T25:00'), null);
-  assert.equal(combinePaymentDateTime('2026-11-11', '13:45', '2026-11-11T13:45:00+03:00'), '2026-11-11T13:45:00+03:00');
-  assert.equal(combinePaymentDateTime('2026-11-11', '13:45', '2026-11-11T13:45:16+03:00'), '2026-11-11T13:45');
 });
 
 test('Excel numeric receipt times survive import without changing duplicate identifiers', (t) => {

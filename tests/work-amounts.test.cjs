@@ -134,7 +134,6 @@ const makeForm = () => {
     creditedAmount: { value: '25000' },
     isPayed: { checked: true },
     paymentDate: { value: '' },
-    paymentTime: { value: '' },
     executorOrganizationId: { value: 'bbbbbbbbbbbbbbbbbbbbbbbb' },
     clientId: { value: 'cccccccccccccccccccccccc' },
     actNumber: { value: '' }, invoiceNumber: { value: '' },
@@ -180,4 +179,21 @@ test('saving and reopening a work preserves UPD mode without changing accounting
     const markup = app.renderWorkForm();
     assert.ok(markup.includes(`data-auto="${value === null}" value="${value ?? 25000}"`));
   }
+});
+
+test('receipt date and time use one input and the legacy duplicate amount input is absent', () => {
+  const app = loadApp();
+  const work = app.normalizeWork({ ...makeWork(null), paymentDate: '2026-11-11T13:45:16+03:00' });
+  app.state.db = app.dbFromCollections({ works: [work] });
+  app.state.editingWorkId = work._id;
+  const markup = app.renderWorkForm();
+  assert.equal((markup.match(/name="paymentDate"/g) || []).length, 1);
+  assert.ok(!markup.includes('name="paymentTime"'));
+  assert.ok(!markup.includes('name="paymentAmount"'));
+  assert.ok(markup.includes('11.11.2026 13:45:16+03:00'));
+  const { form } = makeForm();
+  form._id.value = work._id;
+  form.paymentDate.value = '11.11.2026 13:45:16+03:00';
+  app.saveWorkFromForm(form);
+  assert.equal(app.state.db.works[0].paymentDate, '2026-11-11T13:45:16+03:00');
 });

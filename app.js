@@ -9,7 +9,15 @@
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
   const { normalizeUpdAmount, getUpdAmount, getUpdItems } = window.OffersWorkAmounts;
-  const { paymentDate, paymentTime, paymentDateTime, combinePaymentDateTime, normalizePaymentFields, isFullyPaid } = window.OffersWorkPayments;
+  const { paymentDate, paymentTime, paymentDateTime, normalizePaymentFields, isFullyPaid } = window.OffersWorkPayments;
+  const paymentDateText = (value) => {
+    const date = paymentDate(value);
+    if (!date) return '';
+    const [year, month, day] = date.split('-');
+    const time = paymentTime(value);
+    const zone = time ? /(Z|[+-]\d{2}:\d{2})$/.exec(String(value))?.[1] || '' : '';
+    return `${day}.${month}.${year}${time ? ` ${time}${zone}` : ''}`;
+  };
 
   const app = document.getElementById('app');
   const state = {
@@ -997,8 +1005,8 @@
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
                   <td>${formatMoney(work.amount)} ${html(work.currency || 'RUB')}</td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
-                  <td>${work.paymentDate ? `${displayDate(paymentDate(work.paymentDate))}${paymentTime(work.paymentDate) ? ` ${html(paymentTime(work.paymentDate))}` : ''}` : '—'}</td>
-                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.creditedAmount > 0 && work.creditedAmount < work.amount ? 'Частично' : 'Нет'}</label></td>
+                  <td>${html(paymentDateText(work.paymentDate) || '—')}</td>
+                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''} ${work.source === 'kwork' ? 'disabled' : ''}/> ${work.isPayed ? 'Да' : work.source !== 'kwork' && work.creditedAmount > 0 && work.creditedAmount < work.amount ? 'Частично' : 'Нет'}</label></td>
                   <td>
                     <div class="row">
                       <button class="secondary" data-action="edit-work" data-id="${html(work._id)}">Редактировать</button>
@@ -1067,9 +1075,8 @@
             <label>Сумма документа<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
             <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
             <label>Сумма платежа<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount ?? work.amount ?? 0)}" /></label>
-            <label>Дата платежа<input name="paymentDate" type="date" value="${html(paymentDate(work.paymentDate) || '')}" /></label>
-            <label>Время платежа<input name="paymentTime" type="time" step="1" value="${html(paymentTime(work.paymentDate) || '')}" /></label>
-            <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''}/> Оплачено</span></label>
+            <label>Дата платежа<input name="paymentDate" placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(work.paymentDate))}" /></label>
+            <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''} ${work.source === 'kwork' ? 'disabled' : ''}/> Оплачено</span></label>
           </div>
           <div class="stack">
             <div class="row between">
@@ -1118,13 +1125,15 @@
     const year = documentDate.getFullYear();
     const source = form.source.value === 'kwork' ? 'kwork' : 'document';
     const existingWork = state.db.works.find((work) => work._id === existingId);
+    const enteredPaymentDate = form.paymentDate.value.trim();
+    if (enteredPaymentDate && !paymentDateTime(enteredPaymentDate)) throw new Error('Укажите дату платежа в формате ДД.ММ.ГГГГ, при наличии времени — ДД.ММ.ГГГГ ЧЧ:ММ:СС');
     const payload = normalizeWork({
       ...existingWork,
       _id: existingId || uid(),
       items,
       amount,
       updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
-      paymentDate: combinePaymentDateTime(form.paymentDate.value, form.paymentTime.value, existingWork?.paymentDate),
+      paymentDate: paymentDateTime(enteredPaymentDate),
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
       isPayed: form.isPayed.checked,
       currency: 'RUB',
@@ -1678,9 +1687,10 @@
       target.dataset.auto = target.value === '' ? 'true' : 'false';
       updateWorkTotals(target.closest('form'));
     }
-    if (target.name === 'creditedAmount') {
+    if (target.name === 'creditedAmount' || target.name === 'source') {
       const form = target.closest('form');
-      form.isPayed.checked = isFullyPaid({ amount: workFormAmount(form) }, toNumber(target.value, 0));
+      form.isPayed.disabled = form.source.value === 'kwork';
+      form.isPayed.checked = isFullyPaid({ amount: workFormAmount(form), source: form.source.value }, toNumber(form.creditedAmount.value, 0));
     }
     if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');
@@ -1727,7 +1737,7 @@
       }
       if (action === 'toggle-paid') {
         const work = state.db.works.find((item) => item._id === target.dataset.id);
-        if (work) {
+        if (work && work.source !== 'kwork') {
           if (target.checked) work.paymentDate ||= todayInput();
           work.isPayed = target.checked;
           saveDb();
