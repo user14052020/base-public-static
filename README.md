@@ -26,7 +26,7 @@ without force. No client data is committed as plaintext. GitHub Pages deployment
 If another browser has published newer data, publishing is blocked unless replacing that version is
 explicitly confirmed. A change after the preflight check always requires a fresh check.
 
-Browser edits are local until publication. An existing browser offers to load newly published data;
+Browser edits are local until publication. Published data can be loaded manually on the Backups page;
 it never silently replaces potentially newer local edits. Backups remain available in both directions
 with the main application. The optional command-line publisher is documented in `scripts/README.md`.
 

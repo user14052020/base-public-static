@@ -85,10 +85,22 @@ const loadApp = () => {
   };
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
     globalThis.testApp = { state, normalizeWork, aggregateReport, backupPayload, dbFromCollections,
-      reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm };
+      reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm, shell };
   })();`), context);
-  return { ...context.testApp, listeners };
+  return { ...context.testApp, listeners, window: context.window };
 };
+
+test('shared pages do not display the obsolete published-backup banner', () => {
+  const app = loadApp();
+  app.window.__OFFERS_SEED_ENCRYPTED__ = { revision: 'newer' };
+  app.state.db = app.dbFromCollections({ works: [makeWork(null)] }, { seedRevision: 'older' });
+  const page = app.shell('<h2>Current page</h2>');
+  assert.ok(page.includes('<h2>Current page</h2>'));
+  assert.ok(!page.includes('published-backup'));
+  assert.ok(!page.includes('Опубликован новый бекап'));
+  assert.ok(!page.includes('Загрузить опубликованные данные'));
+  assert.equal(app.state.db.meta.seedRevision, 'older');
+});
 
 test('backup round trips preserve automatic and manual UPD amounts', () => {
   const app = loadApp();

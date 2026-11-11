@@ -910,16 +910,6 @@
         </nav>
       </header>
       <main class="content">
-        ${window.__OFFERS_SEED_ENCRYPTED__?.revision && state.db?.meta?.seedRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision
-          && state.db?.meta?.pendingPublication?.previousRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision
-          && !state.db?.meta?.pendingPublication?.previousRevisions?.includes(window.__OFFERS_SEED_ENCRYPTED__.revision) ? `
-          <section class="panel stack">
-            <strong>Опубликован новый бекап</strong>
-            <form class="row" data-form="published-backup">
-              ${state.password ? '' : '<input name="password" type="password" autocomplete="current-password" placeholder="Пароль" required style="max-width:260px" />'}
-              <button type="submit">Загрузить опубликованные данные</button>
-            </form>
-          </section>` : ''}
         ${state.message ? `<div class="message ${state.message.type}">${html(state.message.text)}</div>` : ''}
         ${content}
       </main>
@@ -1644,19 +1634,6 @@
         state.db = await loadDb(state.password);
         setLoggedIn(true);
         render();
-        return;
-      }
-      if (form.dataset.form === 'published-backup') {
-        const password = state.password || form.password.value;
-        if (!(await verifyPassword(password))) throw new Error('Неверный пароль');
-        if (!confirm('Заменить локальные данные опубликованным бекапом? Несохраненные в бекап изменения будут потеряны.')) return;
-        const published = await seedDb(password);
-        state.db = published;
-        state.password = password;
-        state.editingWorkId = null;
-        state.editingClientId = null;
-        saveDb(state.db, { markChanged: false });
-        showMessage('Опубликованный бекап загружен');
         return;
       }
       if (form.dataset.form === 'work') saveWorkFromForm(form);
