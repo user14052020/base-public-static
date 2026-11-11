@@ -12,6 +12,9 @@ public sealed class PaymentRow : INotifyPropertyChanged
 {
     public string PaymentId { get; init; } = "";
     public string Date { get; init; } = "";
+    public string DisplayDate => DateTimeOffset.TryParse(Date, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value)
+        ? value.ToString(Date.Length <= 10 ? "dd.MM.yyyy" : Date.Length > 16 && Date[16] == ':' ? "dd.MM.yyyy HH:mm:ss" : "dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture)
+        : Date;
     public decimal OriginalAmount { get; init; }
     public string Payer { get; init; } = "";
     public string Purpose { get; init; } = "";

@@ -50,7 +50,7 @@
      <DataGrid Grid.Row="2" x:Name="PaymentsGrid" ItemsSource="{Binding Rows}" SelectionMode="Single" SelectionUnit="FullRow" EnableRowVirtualization="True">
       <DataGrid.Columns>
        <DataGridTemplateColumn Header="✓" Width="35"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Included, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanSelect}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-       <DataGridTextColumn Header="Дата платежа" Binding="{Binding Date}" IsReadOnly="True" Width="158"/>
+       <DataGridTextColumn Header="Дата платежа" Binding="{Binding DisplayDate}" IsReadOnly="True" Width="158"/>
        <DataGridTextColumn Header="Платеж, ₽" Binding="{Binding OriginalAmount, StringFormat=N2}" IsReadOnly="True" Width="95"/>
        <DataGridTextColumn Header="Распределить, ₽" Binding="{Binding AllocationAmount, UpdateSourceTrigger=PropertyChanged}" Width="115"/>
        <DataGridTextColumn Header="Плательщик" Binding="{Binding Payer}" IsReadOnly="True" Width="150"/>
