@@ -15,6 +15,7 @@
     const publication = { preferences, token: '', password: '', snapshot: null, allowReplace: false, busy: false, status: '', commitUrl: '' };
     const clearSecrets = () => {
       publication.token = ''; publication.password = ''; publication.snapshot = null; publication.allowReplace = false;
+      publication.status = ''; publication.commitUrl = '';
       for (const input of deps.document?.querySelectorAll?.('[data-input="github-token"], [data-input="github-password"]') || []) input.value = '';
     };
     const updateProgress = (message) => {
@@ -37,7 +38,7 @@
           </div>
           <div class="row"><button data-action="bank-preview" ${!bank.file || !bank.organizationId ? 'disabled' : ''}>${bank.busy ? 'Обработка...' : 'Сопоставить'}</button>
             <button data-action="bank-apply" ${!selected.length ? 'disabled' : ''}>Применить платежи</button>
-            <span role="status" data-bank-summary>${bank.preview ? `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Выбрано: ${selected.length}` : html(bank.lastResult)}</span>
+            <span role="status" data-bank-summary>${bank.preview ? `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${selected.length}` : html(bank.lastResult)}</span>
           </div>
         </fieldset>
       </section>
@@ -123,6 +124,7 @@
       try {
         publication.snapshot = await publisher.inspect({ token: publication.token, password: deps.getPassword() || publication.password });
         updateProgress('Опубликованная база прочитана.');
+      } catch (error) { updateProgress(error.message); throw error;
       } finally { publication.busy = false; deps.render(); }
     };
     const publishGithub = async () => {
@@ -150,6 +152,7 @@
         }
         publication.allowReplace = false; publication.snapshot = null; publication.commitUrl = result.commitUrl || '';
         updateProgress(result.changed ? `Коммит ${result.commit.slice(0, 8)} создан. GitHub Pages публикует изменения.` : 'Эти данные уже опубликованы.');
+      } catch (error) { updateProgress(error.message); throw error;
       } finally { publication.busy = false; deps.render(); }
     };
     const handleInput = (target) => {
@@ -179,7 +182,7 @@
           if (checkbox) checkbox.checked = row.include;
         }
         const summary = deps.document?.querySelector('[data-bank-summary]');
-        if (summary) summary.textContent = `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Выбрано: ${bank.rows.filter((item) => item.include).length}`;
+        if (summary) summary.textContent = `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${bank.rows.filter((item) => item.include).length}`;
         const applyButton = deps.document?.querySelector('[data-action="bank-apply"]');
         if (applyButton) applyButton.disabled = !bank.rows.some((item) => item.include);
         return true;

@@ -105,7 +105,8 @@
       return { ...payment, allocationAmount: remaining / 100, workId: match?.id || '', include: Boolean(match && !warning), canSelect: true,
         reason: warning || (match ? (references.length ? 'Номер счета и контрагент' : 'Контрагент и сумма') : matches.length > 1 ? 'Несколько подходящих счетов' : 'Счет не найден') };
     });
-    return { organizationId, invoices, rows, totalRows: rows.length, incomingRows: rows.filter((row) => row.canSelect).length, matchedRows: rows.filter((row) => row.include).length };
+    return { organizationId, invoices, rows, totalRows: rows.length, incomingRows: payments.filter((row) => !row.blockedReason).length,
+      availableRows: rows.filter((row) => row.canSelect).length, matchedRows: rows.filter((row) => row.include).length };
   };
   const apply = ({ payload, preview: result, allocations }) => {
     const available = new Map(result.rows.filter((row) => row.canSelect).map((row) => [row.paymentId, row]));

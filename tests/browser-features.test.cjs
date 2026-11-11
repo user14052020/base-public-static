@@ -45,6 +45,7 @@ test('the browser imports receipts into the current database and repeat imports 
   assert.equal(f.saves(), 1);
   await prepareBank(f);
   assert.ok(f.features.renderPayments().includes('Выбрано: 0'));
+  assert.ok(f.features.renderPayments().includes('Входящих: 1. Доступно: 0'));
 });
 
 test('a changed database invalidates the bank preview before any update is applied', async () => {
@@ -81,6 +82,15 @@ test('token input enables clearing and page exit removes credentials from the DO
   f.features.clearSecrets();
   assert.equal(tokenInput.value, '');
   assert.equal(passwordInput.value, '');
+});
+
+test('failed GitHub operations show their error and release the busy state', async () => {
+  const f = fixture({ inspect: async () => { throw new Error('Access denied'); } });
+  await assert.rejects(f.features.handleAction('github-check', {}), /Access denied/);
+  assert.ok(f.features.renderGithub().includes('Access denied'));
+  assert.ok(!f.features.renderGithub().includes('feature-controls stack" disabled'));
+  await f.features.handleAction('github-clear-token', {});
+  assert.ok(!f.features.renderGithub().includes('Access denied'));
 });
 
 test('publishing keeps the local baseline and prevents a stale Pages build from replacing it', async () => {
