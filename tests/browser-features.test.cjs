@@ -3,12 +3,12 @@ const { test } = require('node:test');
 const XLSX = require('../xlsx.full.min.js');
 const { create } = require('../browser-features.js');
 
-const fixture = (publisher, document = { querySelector: () => null }) => {
+const fixture = (publisher, document = { querySelector: () => null }, storedPreferences) => {
   let db = { meta: { seedRevision: 'base-revision' }, clients: [{ _id: 'client', name: 'Client', inn: '0012345678' }],
     organizations: [{ _id: 'org', name: 'Seller', inn: '123456789012' }],
     works: [{ _id: 'work', clientId: 'client', executorOrganizationId: 'org', invoiceNumber: '1', invoiceDate: '2026-01-01', amount: 50000, creditedAmount: 0, isPayed: false }] };
   let seed = { revision: 'base-revision' };
-  const storage = new Map(); let saves = 0;
+  const storage = new Map(storedPreferences === undefined ? [] : [['offers-base-github-preferences-v1', storedPreferences]]); let saves = 0;
   const features = create({ publisher, html: (text) => String(text ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
     formatMoney: (value) => String(value), paymentDateText: (value) => value || '', storage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     getDb: () => db, exportPayload: () => structuredClone({ collections: { clients: db.clients, organizations: db.organizations, works: db.works } }),
@@ -32,6 +32,25 @@ const prepareBank = async (f) => {
   f.features.handleChange({ dataset: { input: 'bank-organization' }, value: 'org' });
   await f.features.handleAction('bank-preview', {});
 };
+
+test('the requested author is prefilled without overwriting remembered settings', () => {
+  const f = fixture();
+  assert.match(f.features.renderGithub(), /data-input="github-author-name"[^>]*value="Vadim Maharram"/);
+  assert.match(f.features.renderGithub(), /data-input="github-author-email"[^>]*value="asktask@icloud.com"/);
+  f.features.handleInput({ dataset: { input: 'github-author-name' }, value: 'Another Author' });
+  f.features.handleInput({ dataset: { input: 'github-author-email' }, value: 'another@example.test' });
+  const restored = fixture(undefined, undefined, [...f.storage.values()][0]);
+  assert.match(restored.features.renderGithub(), /data-input="github-author-name"[^>]*value="Another Author"/);
+  assert.match(restored.features.renderGithub(), /data-input="github-author-email"[^>]*value="another@example.test"/);
+});
+
+test('intentionally empty author settings stay empty and damaged preferences use defaults', () => {
+  const empty = fixture(undefined, undefined, JSON.stringify({ authorName: '', authorEmail: '' }));
+  assert.match(empty.features.renderGithub(), /data-input="github-author-name"[^>]*value=""/);
+  assert.match(empty.features.renderGithub(), /data-input="github-author-email"[^>]*value=""/);
+  const damaged = fixture(undefined, undefined, 'invalid JSON');
+  assert.match(damaged.features.renderGithub(), /data-input="github-author-name"[^>]*value="Vadim Maharram"/);
+});
 
 test('the browser imports receipts into the current database and repeat imports are skipped', async () => {
   const f = fixture();

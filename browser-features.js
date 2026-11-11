@@ -3,13 +3,14 @@
   else root.OffersBrowserFeatures = factory(root.OffersSeedCodec, root.OffersBankReconciliation, root.OffersGithubPublisher, root.XLSX);
 })(globalThis, (codec, reconciliation, github, XLSX) => {
   const preferencesKey = 'offers-base-github-preferences-v1';
+  const defaultPreferences = { authorName: 'Vadim Maharram', authorEmail: 'asktask@icloud.com' };
   const create = (deps) => {
     const { html, formatMoney, paymentDateText } = deps;
     const publisher = deps.publisher || github.createPublisher();
-    let preferences = { authorName: '', authorEmail: '' };
+    let preferences = { ...defaultPreferences };
     try {
       const stored = JSON.parse(deps.storage.getItem?.(preferencesKey) || '{}');
-      preferences = { authorName: String(stored.authorName || ''), authorEmail: String(stored.authorEmail || '') };
+      preferences = { authorName: String(stored.authorName ?? defaultPreferences.authorName), authorEmail: String(stored.authorEmail ?? defaultPreferences.authorEmail) };
     } catch { /* A malformed optional preference must not block the accounting app. */ }
     const bank = { file: null, organizationId: '', preview: null, rows: [], baseHash: '', busy: false, filter: 'pending', sequence: 0, lastResult: '' };
     const publication = { preferences, token: '', password: '', snapshot: null, allowReplace: false, busy: false, status: '', commitUrl: '' };
