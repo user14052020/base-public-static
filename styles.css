@@ -319,7 +319,26 @@ th {
   display: none !important;
 }
 
+.browser-section {
+  padding: 18px 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+.browser-section h2 { margin: 0; font-size: 22px; }
+.feature-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.feature-status { min-height: 24px; margin: 0; overflow-wrap: anywhere; }
+.sync-summary { padding: 12px 0; border-block: 1px solid var(--line); }
+.browser-section input[type="checkbox"] { width: auto; }
+.bank-table { min-width: 1400px; font-size: 13px; }
+.bank-table th { letter-spacing: 0; }
+.bank-table td { vertical-align: middle; }
+.bank-share { width: 130px; }
+.bank-invoice { width: 300px; }
+.bank-purpose { min-width: 230px; max-width: 340px; overflow-wrap: anywhere; }
+.numeric { white-space: nowrap; text-align: right; }
+.browser-section .switch { flex-wrap: wrap; }
+
 @media (max-width: 980px) {
+  .topbar { flex-direction: column; align-items: flex-start; }
   .grid,
   .grid.two,
   .grid.three,

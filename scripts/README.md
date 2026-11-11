@@ -1,5 +1,8 @@
 # Publish a Backup
 
+The application now imports bank receipts and publishes encrypted data directly from the browser.
+This optional command-line tool remains available as an alternative; no desktop client is required.
+
 Requires Node.js 18+ and Git with access to `origin`. Run on a clean, up-to-date `main` branch.
 Keep the backup outside this public repository.
 

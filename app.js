@@ -215,25 +215,7 @@
   const decryptSeed = async (password) => {
     const encrypted = window.__OFFERS_SEED_ENCRYPTED__;
     if (!encrypted) throw new Error('Стартовый бэкап не найден');
-    const rawKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: base64ToBytes(encrypted.salt),
-        iterations: encrypted.iterations,
-        hash: 'SHA-256'
-      },
-      rawKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt']
-    );
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: base64ToBytes(encrypted.iv) },
-      key,
-      base64ToBytes(encrypted.data)
-    );
-    return JSON.parse(new TextDecoder().decode(plain));
+    return window.OffersSeedCodec.decrypt(encrypted, password);
   };
 
   const seedDb = async (password) => {
@@ -255,6 +237,7 @@
           clients: (parsed.clients || []).map(normalizeClient),
           works: (parsed.works || []).map(normalizeWork)
         };
+        if (normalized.meta?.pendingPublication?.revision === window.__OFFERS_SEED_ENCRYPTED__?.revision) normalized.meta.pendingPublication = null;
         localStorage.setItem(DB_KEY, JSON.stringify(normalized));
         return normalized;
       } catch {
@@ -268,12 +251,12 @@
     const stored = loadStoredDb();
     if (stored) return stored;
     const seeded = await seedDb(password);
-    saveDb(seeded);
+    saveDb(seeded, { markChanged: false });
     return seeded;
   };
 
-  const saveDb = (db = state.db) => {
-    db.meta = { ...(db.meta || {}), updatedAt: new Date().toISOString() };
+  const saveDb = (db = state.db, { markChanged = true } = {}) => {
+    db.meta = { ...(db.meta || {}), updatedAt: new Date().toISOString(), ...(markChanged ? { localChanges: true } : {}) };
     localStorage.setItem(DB_KEY, JSON.stringify(db));
   };
 
@@ -920,12 +903,16 @@
           ${navButton('works', 'Работы')}
           ${navButton('clients', 'Клиенты')}
           ${navButton('report', 'Отчет')}
+          ${navButton('payments', 'Платежи')}
+          ${navButton('github', 'GitHub')}
           ${navButton('backup', 'Бэкапы')}
           <button class="secondary" data-action="logout">Выйти</button>
         </nav>
       </header>
       <main class="content">
-        ${window.__OFFERS_SEED_ENCRYPTED__?.revision && state.db?.meta?.seedRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision ? `
+        ${window.__OFFERS_SEED_ENCRYPTED__?.revision && state.db?.meta?.seedRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision
+          && state.db?.meta?.pendingPublication?.previousRevision !== window.__OFFERS_SEED_ENCRYPTED__.revision
+          && !state.db?.meta?.pendingPublication?.previousRevisions?.includes(window.__OFFERS_SEED_ENCRYPTED__.revision) ? `
           <section class="panel stack">
             <strong>Опубликован новый бекап</strong>
             <form class="row" data-form="published-backup">
@@ -1638,6 +1625,8 @@
     if (state.view === 'clients') renderClients();
     else if (state.view === 'report') renderReport();
     else if (state.view === 'backup') renderBackup();
+    else if (state.view === 'payments') app.innerHTML = shell(browserFeatures.renderPayments());
+    else if (state.view === 'github') app.innerHTML = shell(browserFeatures.renderGithub());
     else renderWorks();
   };
 
@@ -1666,7 +1655,7 @@
         state.password = password;
         state.editingWorkId = null;
         state.editingClientId = null;
-        saveDb();
+        saveDb(state.db, { markChanged: false });
         showMessage('Опубликованный бекап загружен');
         return;
       }
@@ -1679,6 +1668,7 @@
 
   document.addEventListener('input', (event) => {
     const target = event.target;
+    if (browserFeatures.handleInput(target)) return;
     if (target.dataset.input === 'work-search') {
       state.query = target.value;
       renderWorks();
@@ -1699,12 +1689,17 @@
     }
   });
 
+  document.addEventListener('change', (event) => {
+    browserFeatures.handleChange(event.target);
+  });
+
   document.addEventListener('click', async (event) => {
     const target = event.target.closest('[data-action], [data-view]');
     if (!target) return;
     clearMessage();
     const action = target.dataset.action;
     try {
+      if (await browserFeatures.handleAction(action, target)) return;
       if (target.dataset.view) {
         state.view = target.dataset.view;
         state.editingWorkId = null;
@@ -1713,6 +1708,8 @@
         return;
       }
       if (action === 'logout') {
+        browserFeatures.clearSecrets();
+        state.password = null;
         setLoggedIn(false);
         render();
       }
@@ -1808,7 +1805,7 @@
         if (!state.password) throw new Error('Для сброса к стартовым данным выйдите и войдите снова');
         if (confirm('Сбросить локальные данные к стартовому бэкапу?')) {
           state.db = await seedDb(state.password);
-          saveDb();
+          saveDb(state.db, { markChanged: false });
           showMessage('Данные сброшены к стартовым');
         }
       }
@@ -1816,6 +1813,16 @@
       showMessage(error.message || 'Ошибка', 'error');
     }
   });
+
+  const browserFeatures = window.OffersBrowserFeatures.create({
+    html, formatMoney, paymentDateText, document, storage: localStorage,
+    getDb: () => state.db, exportPayload: backupPayload,
+    replacePayload: (payload, meta) => { state.db = dbFromCollections(reviveMongo(payload.collections), meta); },
+    saveDb, render, message: showMessage, confirm: (message) => confirm(message),
+    getPassword: () => state.password,
+    getSeed: () => window.__OFFERS_SEED_ENCRYPTED__, setSeed: (packet) => { window.__OFFERS_SEED_ENCRYPTED__ = packet; }
+  });
+  window.addEventListener?.('pagehide', () => { browserFeatures.clearSecrets(); state.password = null; });
 
   if (isLoggedIn()) {
     state.db = loadStoredDb();
