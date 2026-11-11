@@ -323,13 +323,15 @@
     const amountInput = row?.querySelector('[data-item-amount]');
     if (amountInput) amountInput.value = formatMoney(workItemAmountFromRow(row));
   };
-  const updateWorkTotals = (form) => {
-    if (!form) return;
-    const amount = Array.from(form.querySelectorAll('[data-item-row]'))
+  const workFormAmount = (form) => Array.from(form.querySelectorAll('[data-item-row]'))
       .filter((row) => normalizeText(row.querySelector('[name="itemName"]').value))
       .reduce((sum, row) => sum + workItemAmountFromRow(row), 0);
+  const updateWorkTotals = (form) => {
+    if (!form) return;
+    const amount = workFormAmount(form);
     form.querySelector('[data-work-total]').value = formatMoney(amount);
     if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount }));
+    if (form.paymentAmount) form.isPayed.checked = paymentDetails({ amount, paymentAmount: form.paymentAmount.value, isPayed: form.isPayed.checked }).isPayed;
   };
   const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
   const getClient = (id) => state.db.clients.find((item) => item._id === id);
@@ -996,7 +998,7 @@
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
                   <td>${work.paymentDate ? displayDate(work.paymentDate) : '—'}</td>
                   <td>${work.paymentAmount == null ? '—' : `${formatMoney(work.paymentAmount)} ${html(work.currency || 'RUB')}`}</td>
-                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : 'Нет'}</label></td>
+                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.paymentAmount > 0 ? 'Частично' : 'Нет'}</label></td>
                   <td>
                     <div class="row">
                       <button class="secondary" data-action="edit-work" data-id="${html(work._id)}">Редактировать</button>
@@ -1679,13 +1681,19 @@
       updateWorkTotals(target.closest('form'));
     }
     if (target.name === 'paymentAmount') {
+      updateWorkTotals(target.closest('form'));
+    }
+    if (target.name === 'isPayed') {
       const form = target.closest('form');
-      const details = paymentDetails({ amount: totalWorkAmount(Array.from(form.querySelectorAll('[data-item-row]')).map((row) => ({
-        name: row.querySelector('[name="itemName"]').value,
-        quantity: row.querySelector('[name="itemQuantity"]').value,
-        price: row.querySelector('[name="itemPrice"]').value
-      }))), paymentAmount: target.value, isPayed: form.isPayed.checked });
-      form.isPayed.checked = details.isPayed;
+      if (form.paymentAmount.value !== '') {
+        if (!target.checked) {
+          form.paymentAmount.value = '0';
+          form.paymentDate.value = '';
+        } else {
+          form.paymentAmount.value = workFormAmount(form).toFixed(2);
+          form.paymentDate.value ||= todayInput();
+        }
+      }
     }
     if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');

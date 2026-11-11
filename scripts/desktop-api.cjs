@@ -19,6 +19,11 @@ const ensureRepository = (directory) => {
   if (!/^(?:git@github\.com:|https:\/\/github\.com\/|ssh:\/\/git@github\.com\/)user14052020\/base-public-static(?:\.git)?\/?$/i.test(remote)) {
     throw new Error('Origin должен указывать на user14052020/base-public-static.');
   }
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  if (git('branch', '--show-current') !== 'main') throw new Error('В папке репозитория должна быть выбрана ветка main.');
+  if (git('status', '--porcelain')) throw new Error('В папке репозитория есть несохраненные изменения. Публикация отменена.');
+  git('fetch', 'origin', 'main');
+  git('merge', '--ff-only', 'refs/remotes/origin/main');
   return root;
 };
 
