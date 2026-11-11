@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Interop;
 
 namespace OffersBase.Desktop;
 
@@ -25,6 +27,8 @@ public sealed class BackendClient
             }
         };
         process.StartInfo.ArgumentList.Add(backend);
+        if (Application.Current?.MainWindow is Window window)
+            process.StartInfo.Environment["GCM_MODAL_PARENTHWND"] = new WindowInteropHelper(window).Handle.ToString();
         if (!process.Start()) throw new InvalidOperationException("Не удалось запустить обработку.");
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
@@ -44,7 +48,7 @@ public sealed class BackendClient
         catch (OperationCanceledException)
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
-            throw new InvalidOperationException("Превышено время ожидания. Проверьте доступ к GitHub и SSH-ключ.");
+            throw new InvalidOperationException("Превышено время ожидания. Проверьте подключение к GitHub и завершите вход в браузере.");
         }
     }
 }

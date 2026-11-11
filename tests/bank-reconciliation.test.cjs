@@ -7,7 +7,7 @@ const { gzipSync } = require('node:zlib');
 const XLSX = require('../xlsx.full.min.js');
 const { readBackup } = require('../scripts/publish-backup.cjs');
 const { previewReconciliation, applyReconciliation, invoiceReferences } = require('../scripts/lib/bank-reconciliation.cjs');
-const { paymentDate, paymentDetails } = require('../work-payments.js');
+const { paymentDate, paymentDateTime, paymentDetails, normalizePaymentFields, combinePaymentDateTime } = require('../work-payments.js');
 
 const base = () => ({ collections: {
   clients: [{ _id: 'client', inn: '0012345678', name: 'Client', bankAccount: '00000000000000000001', customField: 'keep' }],
@@ -73,7 +73,8 @@ test('partial payments accumulate, preserve requisites and UPD, and duplicate im
   f.apply([{ paymentId: p.rows[0].paymentId, workId: 'w1', amount: 25000 }]);
   let restored = readBackup(f.outputPath);
   let work = restored.collections.works.find((item) => item._id === 'w1');
-  assert.equal(work.paymentAmount, 25000);
+  assert.equal(work.creditedAmount, 25000);
+  assert.equal('paymentAmount' in work, false);
   assert.equal(work.isPayed, false);
   assert.equal(work.paymentDate, '2026-01-10');
   assert.equal(work.amount, 50000);
@@ -86,7 +87,7 @@ test('partial payments accumulate, preserve requisites and UPD, and duplicate im
   f.apply([{ paymentId: next.rows[1].paymentId, workId: 'w1', amount: 25000 }]);
   restored = readBackup(f.outputPath);
   work = restored.collections.works.find((item) => item._id === 'w1');
-  assert.equal(work.paymentAmount, 50000);
+  assert.equal(work.creditedAmount, 50000);
   assert.equal(work.isPayed, true);
   writeFileSync(f.backupPath, readFileSync(f.outputPath));
   assert.equal(f.preview().rows.filter((row) => row.canSelect).length, 0);
@@ -98,8 +99,8 @@ test('one payment can be split between invoices and over-allocation is rejected'
   assert.throws(() => f.apply([{ paymentId, workId: 'w1', amount: 50000 }, { paymentId, workId: 'w2', amount: 1 }]), /превышает/);
   f.apply([{ paymentId, workId: 'w1', amount: 25000 }, { paymentId, workId: 'w2', amount: 25000 }]);
   const works = readBackup(f.outputPath).collections.works;
-  assert.equal(works.find((work) => work._id === 'w1').paymentAmount, 25000);
-  assert.equal(works.find((work) => work._id === 'w2').paymentAmount, 25000);
+  assert.equal(works.find((work) => work._id === 'w1').creditedAmount, 25000);
+  assert.equal(works.find((work) => work._id === 'w2').creditedAmount, 25000);
 });
 
 test('files changed after preview and overwriting source data are rejected', (t) => {
@@ -117,4 +118,42 @@ test('date discrepancies and manual payment totals require review', (t) => {
   const other = fixture(t, [payment('date', 25000, 'Счет №1 от 02.01.2026')]);
   assert.equal(other.preview().rows[0].include, false);
   assert.equal(other.preview().rows[0].workId, 'w1');
+});
+
+test('legacy duplicate payment amount migrates to creditedAmount without losing payments', () => {
+  const migrated = normalizePaymentFields({ amount: 50000, creditedAmount: 50000, paymentAmount: 25000,
+    paymentDate: '2026-11-11T13:45:16', isPayed: true, bankPayments: [{ amount: 25000 }] });
+  assert.equal(migrated.creditedAmount, 25000);
+  assert.equal('paymentAmount' in migrated, false);
+  assert.equal(migrated.paymentDate, '2026-11-11T13:45:16');
+  assert.equal(migrated.isPayed, false);
+  assert.equal(migrated.bankPayments.length, 1);
+  assert.equal(normalizePaymentFields({ amount: 100, creditedAmount: 0, isPayed: false }).creditedAmount, 0);
+});
+
+test('receipt times and time zones are retained and date-only sources stay date-only', () => {
+  assert.equal(paymentDateTime('11.11.2026 13:45:16'), '2026-11-11T13:45:16');
+  assert.equal(paymentDateTime('2026-11-11T13:45:16+03:00'), '2026-11-11T13:45:16+03:00');
+  assert.equal(paymentDateTime('2026-11-11'), '2026-11-11');
+  assert.equal(paymentDateTime('2026-11-11T25:00'), null);
+  assert.equal(combinePaymentDateTime('2026-11-11', '13:45', '2026-11-11T13:45:00+03:00'), '2026-11-11T13:45:00+03:00');
+  assert.equal(combinePaymentDateTime('2026-11-11', '13:45', '2026-11-11T13:45:16+03:00'), '2026-11-11T13:45');
+});
+
+test('Excel numeric receipt times survive import without changing duplicate identifiers', (t) => {
+  const row = payment('with-time', 50000);
+  const f = fixture(t, [row]);
+  const old = f.preview().rows[0];
+  const wb = XLSX.read(readFileSync(f.bankPath), { type: 'buffer' });
+  const cell = wb.Sheets['Операции'].A2;
+  cell.t = 'n'; cell.v = 46032 + (13 * 3600 + 45 * 60 + 16) / 86400; cell.z = 'dd.mm.yyyy hh:mm:ss';
+  writeFileSync(f.bankPath, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  const p = f.preview();
+  assert.match(p.rows[0].date, /T13:45:16$/);
+  f.apply([{ paymentId: p.rows[0].paymentId, workId: 'w1', amount: 50000 }]);
+  const restored = readBackup(f.outputPath).collections.works.find((work) => work._id === 'w1');
+  assert.match(restored.paymentDate, /T13:45:16$/);
+  cell.v = Math.floor(cell.v); cell.z = 'dd.mm.yyyy';
+  writeFileSync(f.bankPath, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  assert.equal(f.preview().rows[0].paymentId, p.rows[0].paymentId);
 });

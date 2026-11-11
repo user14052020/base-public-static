@@ -9,7 +9,7 @@
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
   const { normalizeUpdAmount, getUpdAmount, getUpdItems } = window.OffersWorkAmounts;
-  const { paymentAmount, paymentDate, paymentDetails } = window.OffersWorkPayments;
+  const { paymentDate, paymentTime, paymentDateTime, combinePaymentDateTime, normalizePaymentFields, isFullyPaid } = window.OffersWorkPayments;
 
   const app = document.getElementById('app');
   const state = {
@@ -145,6 +145,7 @@
   };
 
   const normalizeWork = (work) => {
+    work = normalizePaymentFields(work);
     const items = Array.isArray(work.items) ? work.items.map(normalizeItem).filter((item) => item.name) : [];
     const amount = items.reduce((sum, item) => sum + item.amount, 0);
     const actDate = parseDate(work.actDate) || parseDate(work.invoiceDate) || new Date();
@@ -159,7 +160,8 @@
       amount,
       updAmount: normalizeUpdAmount(work.updAmount),
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
-      ...paymentDetails({ ...work, amount }),
+      paymentDate: paymentDateTime(work.paymentDate),
+      isPayed: Boolean(work.isPayed),
       currency: work.currency || 'RUB',
       source,
       sourceName: work.sourceName || (source === 'kwork' ? 'Kwork' : 'Счет/акт'),
@@ -331,7 +333,6 @@
     const amount = workFormAmount(form);
     form.querySelector('[data-work-total]').value = formatMoney(amount);
     if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount }));
-    if (form.paymentAmount) form.isPayed.checked = paymentDetails({ amount, paymentAmount: form.paymentAmount.value, isPayed: form.isPayed.checked }).isPayed;
   };
   const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
   const getClient = (id) => state.db.clients.find((item) => item._id === id);
@@ -980,7 +981,7 @@
             <thead>
               <tr>
                 <th>Дата</th><th>Позиции</th><th>Организация</th><th>Клиент</th><th>Документы</th>
-                <th>Источник</th><th>Сумма</th><th>Зачислено</th><th>Дата платежа</th><th>Сумма платежа</th><th>Оплачено</th><th>Действия</th>
+                <th>Источник</th><th>Сумма</th><th>Сумма платежа</th><th>Дата платежа</th><th>Оплачено</th><th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -996,9 +997,8 @@
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
                   <td>${formatMoney(work.amount)} ${html(work.currency || 'RUB')}</td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
-                  <td>${work.paymentDate ? displayDate(work.paymentDate) : '—'}</td>
-                  <td>${work.paymentAmount == null ? '—' : `${formatMoney(work.paymentAmount)} ${html(work.currency || 'RUB')}`}</td>
-                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.paymentAmount > 0 ? 'Частично' : 'Нет'}</label></td>
+                  <td>${work.paymentDate ? `${displayDate(paymentDate(work.paymentDate))}${paymentTime(work.paymentDate) ? ` ${html(paymentTime(work.paymentDate))}` : ''}` : '—'}</td>
+                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.creditedAmount > 0 && work.creditedAmount < work.amount ? 'Частично' : 'Нет'}</label></td>
                   <td>
                     <div class="row">
                       <button class="secondary" data-action="edit-work" data-id="${html(work._id)}">Редактировать</button>
@@ -1022,7 +1022,6 @@
     items: [{ name: '', quantity: 1, price: 0 }],
     creditedAmount: 0,
     updAmount: null,
-    paymentAmount: null,
     paymentDate: null,
     isPayed: false,
     currency: 'RUB',
@@ -1067,9 +1066,9 @@
             <label>Номер счета<input name="invoiceNumber" value="${html(work.invoiceNumber)}" /></label>
             <label>Сумма документа<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
             <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
-            <label>Сумма зачисления<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount || work.amount || 0)}" /></label>
-            <label>Дата платежа<input name="paymentDate" type="date" value="${html(work.paymentDate || '')}" /></label>
-            <label>Сумма платежа<input name="paymentAmount" type="number" min="0" step="0.01" value="${html(work.paymentAmount ?? '')}" /></label>
+            <label>Сумма платежа<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount ?? work.amount ?? 0)}" /></label>
+            <label>Дата платежа<input name="paymentDate" type="date" value="${html(paymentDate(work.paymentDate) || '')}" /></label>
+            <label>Время платежа<input name="paymentTime" type="time" step="1" value="${html(paymentTime(work.paymentDate) || '')}" /></label>
             <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''}/> Оплачено</span></label>
           </div>
           <div class="stack">
@@ -1125,8 +1124,7 @@
       items,
       amount,
       updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
-      paymentAmount: paymentAmount(form.paymentAmount.value),
-      paymentDate: paymentDate(form.paymentDate.value),
+      paymentDate: combinePaymentDateTime(form.paymentDate.value, form.paymentTime.value, existingWork?.paymentDate),
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
       isPayed: form.isPayed.checked,
       currency: 'RUB',
@@ -1680,20 +1678,9 @@
       target.dataset.auto = target.value === '' ? 'true' : 'false';
       updateWorkTotals(target.closest('form'));
     }
-    if (target.name === 'paymentAmount') {
-      updateWorkTotals(target.closest('form'));
-    }
-    if (target.name === 'isPayed') {
+    if (target.name === 'creditedAmount') {
       const form = target.closest('form');
-      if (form.paymentAmount.value !== '') {
-        if (!target.checked) {
-          form.paymentAmount.value = '0';
-          form.paymentDate.value = '';
-        } else {
-          form.paymentAmount.value = workFormAmount(form).toFixed(2);
-          form.paymentDate.value ||= todayInput();
-        }
-      }
+      form.isPayed.checked = isFullyPaid({ amount: workFormAmount(form) }, toNumber(target.value, 0));
     }
     if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');
@@ -1741,8 +1728,7 @@
       if (action === 'toggle-paid') {
         const work = state.db.works.find((item) => item._id === target.dataset.id);
         if (work) {
-          work.paymentAmount = target.checked ? work.amount : 0;
-          work.paymentDate = target.checked ? work.paymentDate || todayInput() : null;
+          if (target.checked) work.paymentDate ||= todayInput();
           work.isPayed = target.checked;
           saveDb();
           renderWorks();

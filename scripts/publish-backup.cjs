@@ -128,7 +128,7 @@ const atomicWrite = (filename, content) => {
   }
 };
 
-const publishBackup = async ({ backupPath, password, repoDir = resolve(__dirname, '..'), log = console.log }) => {
+const publishBackup = async ({ backupPath, password, repoDir = resolve(__dirname, '..'), log = console.log, gitCommand }) => {
   const root = realpathSync(repoDir);
   const backupFile = realpathSync(resolve(backupPath));
   const backupRelative = relative(root, backupFile);
@@ -136,7 +136,8 @@ const publishBackup = async ({ backupPath, password, repoDir = resolve(__dirname
     throw new Error('Keep the unencrypted backup outside the public Git repository.');
   }
   const payload = readBackup(backupFile);
-  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const git = (...args) => gitCommand ? gitCommand(args, { cwd: root })
+    : execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   if (git('rev-parse', '--is-inside-work-tree') !== 'true' || git('rev-parse', '--show-prefix') !== '') {
     throw new Error('Select the repository root, not a nested folder.');
   }

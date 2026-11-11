@@ -40,6 +40,8 @@ jobs:
             Write-Output "::error::$message"
             exit $code
           }
+      - name: Test settings persistence
+        run: dotnet run --project desktop/OffersBase.Settings.Tests/OffersBase.Settings.Tests.csproj -c Release
       - name: Publish Windows application
         run: dotnet publish desktop/OffersBase.Desktop/OffersBase.Desktop.csproj -c Release -r win-x64 --self-contained true -o desktop-out
       - name: Package portable application
@@ -58,8 +60,8 @@ jobs:
         run: |
           gh release view desktop-latest 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create desktop-latest --title 'Offers Base for Windows' --notes 'Portable Windows application. Git and an SSH key with repository access are required.' --target main
+            gh release create desktop-latest --title 'Offers Base for Windows' --notes 'Portable Windows application. Git for Windows with Git Credential Manager is required for HTTPS.' --target main
           }
           gh release upload desktop-latest OffersBaseDesktop-win-x64.zip --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit desktop-latest --notes "Portable Windows application. Build: $env:GITHUB_SHA. Git and an SSH key with repository access are required."
+          gh release edit desktop-latest --notes "Offers Base 1.1 for Windows. HTTPS with Git Credential Manager, saved Git settings, unified payment amount and receipt timestamps. Build: $env:GITHUB_SHA."

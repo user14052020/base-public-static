@@ -5,6 +5,8 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
+using System.Windows.Input;
 using Microsoft.Win32;
 
 namespace OffersBase.Desktop;
@@ -14,7 +16,9 @@ public partial class MainWindow : Window
     private readonly BackendClient backend = new();
     private JsonElement? preview;
     private bool busy;
-    private readonly string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OffersBase", "settings.json");
+    private readonly DesktopSettingsStore settingsStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OffersBase", "settings.json"));
+    private readonly DispatcherTimer settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private bool loadingSettings = true;
     public ObservableCollection<PaymentRow> Rows { get; } = [];
 
     public MainWindow()
@@ -24,10 +28,55 @@ public partial class MainWindow : Window
         RepoPath.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OffersBase", "base-public-static");
         try
         {
-            if (File.Exists(settingsPath)) RepoPath.Text = JsonDocument.Parse(File.ReadAllText(settingsPath)).RootElement.GetProperty("repoPath").GetString() ?? RepoPath.Text;
+            var settings = settingsStore.Load();
+            if (!string.IsNullOrWhiteSpace(settings.RepoPath)) RepoPath.Text = settings.RepoPath;
+            RepositoryUrl.Text = settings.RepositoryUrl;
+            AuthorName.Text = settings.AuthorName;
+            AuthorEmail.Text = settings.AuthorEmail;
+            GithubLogin.Text = settings.GithubLogin;
         }
         catch { /* Invalid optional settings do not prevent startup. */ }
+        loadingSettings = false;
+        settingsSaveTimer.Tick += (_, _) =>
+        {
+            settingsSaveTimer.Stop();
+            try { SaveSettings(); }
+            catch (Exception error) { Status.Text = "Не удалось сохранить настройки: " + error.Message; }
+        };
+        Loaded += async (_, _) => await LoadGitIdentityAsync();
     }
+
+    private void SaveSettings()
+    {
+        settingsStore.Save(new DesktopSettings { RepoPath = RepoPath.Text.Trim(), RepositoryUrl = RepositoryUrl.Text.Trim(),
+            AuthorName = AuthorName.Text.Trim(), AuthorEmail = AuthorEmail.Text.Trim(), GithubLogin = GithubLogin.Text.Trim() });
+    }
+    private void SettingsChanged(object sender, TextChangedEventArgs e)
+    {
+        if (loadingSettings) return;
+        settingsSaveTimer.Stop();
+        settingsSaveTimer.Start();
+    }
+    private async Task LoadGitIdentityAsync()
+    {
+        try
+        {
+            var result = await backend.ExecuteAsync(new { command = "git-settings", repoDir = RepoPath.Text });
+            if (string.IsNullOrWhiteSpace(AuthorName.Text)) AuthorName.Text = result.GetProperty("authorName").GetString() ?? "";
+            if (string.IsNullOrWhiteSpace(AuthorEmail.Text)) AuthorEmail.Text = result.GetProperty("authorEmail").GetString() ?? "";
+        }
+        catch (Exception error) { Status.Text = error.Message; }
+    }
+    private async void RepositoryChanged(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!loadingSettings && !busy) await LoadGitIdentityAsync();
+    }
+    private async void LoginGithub(object sender, RoutedEventArgs e) => await RunAsync("Ожидается вход в GitHub через браузер...", async () =>
+    {
+        SaveSettings();
+        var result = await backend.ExecuteAsync(new { command = "git-login", repositoryUrl = RepositoryUrl.Text, githubLogin = GithubLogin.Text });
+        Status.Text = result.GetProperty("message").GetString()!;
+    });
 
     private async Task RunAsync(string message, Func<Task> action)
     {
@@ -149,9 +198,11 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(backupPath) || string.IsNullOrWhiteSpace(RepoPath.Text) || Password.Password.Length == 0)
             throw new InvalidOperationException("Выберите бекап, папку репозитория и введите пароль сайта на вкладке Публикация.");
-        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-        File.WriteAllText(settingsPath, JsonSerializer.Serialize(new { repoPath = RepoPath.Text }));
-        var result = await backend.ExecuteAsync(new { command = "publish", backupPath, repoDir = RepoPath.Text, password = Password.Password });
+        if (string.IsNullOrWhiteSpace(AuthorName.Text) || string.IsNullOrWhiteSpace(AuthorEmail.Text))
+            throw new InvalidOperationException("Заполните имя и email автора на вкладке Публикация.");
+        SaveSettings();
+        var result = await backend.ExecuteAsync(new { command = "publish", backupPath, repoDir = RepoPath.Text, password = Password.Password,
+            repositoryUrl = RepositoryUrl.Text, githubLogin = GithubLogin.Text, authorName = AuthorName.Text, authorEmail = AuthorEmail.Text });
         PublishLog.Text = string.Join(Environment.NewLine, result.GetProperty("messages").EnumerateArray().Select(item => item.GetString()));
         Status.Text = result.GetProperty("changed").GetBoolean() ? "Отправлено в GitHub. Ожидается публикация Pages." : "Этот бекап уже опубликован.";
         Password.Clear();
@@ -172,5 +223,15 @@ public partial class MainWindow : Window
     private void WindowClosing(object? sender, CancelEventArgs e)
     {
         if (busy) { e.Cancel = true; MessageBox.Show(this, "Дождитесь завершения текущей операции.", "Offers Base"); }
+        else
+        {
+            settingsSaveTimer.Stop();
+            try { SaveSettings(); }
+            catch (Exception error)
+            {
+                e.Cancel = MessageBox.Show(this, "Не удалось сохранить настройки. Закрыть без сохранения?\n" + error.Message,
+                    "Offers Base", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes;
+            }
+        }
     }
 }

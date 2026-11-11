@@ -2,32 +2,41 @@
 
 const { readFileSync, existsSync, mkdirSync, readdirSync } = require('node:fs');
 const { resolve, dirname, join } = require('node:path');
-const { execFileSync } = require('node:child_process');
 const { readBackup, publishBackup } = require('./publish-backup.cjs');
 const { previewReconciliation, applyReconciliation, id, hash } = require('./lib/bank-reconciliation.cjs');
+const { normalizeRepositoryUrl, validateIdentity, createGitClient, readGitSettings, configureIdentity } = require('./lib/git-settings.cjs');
 
-const ensureRepository = (directory) => {
+const ensureRepository = (directory, client) => {
   const root = resolve(directory);
-  process.env.GIT_TERMINAL_PROMPT = '0';
-  process.env.GIT_SSH_COMMAND ||= 'ssh -o BatchMode=yes -o ConnectTimeout=20';
+  if (client.https) {
+    try { client.run(['credential-manager', '--version']); }
+    catch { throw new Error('Установите Git for Windows с компонентом Git Credential Manager.'); }
+  }
   if (!existsSync(join(root, '.git'))) {
     if (existsSync(root) && readdirSync(root).length) throw new Error('Выбранная папка не является Git-репозиторием и не пуста.');
     mkdirSync(dirname(root), { recursive: true });
-    execFileSync('git', ['clone', '--branch', 'main', 'git@github.com:user14052020/base-public-static.git', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    client.run(['clone', '--branch', 'main', client.url, root]);
   }
-  const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8' }).trim();
-  if (!/^(?:git@github\.com:|https:\/\/github\.com\/|ssh:\/\/git@github\.com\/)user14052020\/base-public-static(?:\.git)?\/?$/i.test(remote)) {
-    throw new Error('Origin должен указывать на user14052020/base-public-static.');
-  }
-  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const git = (...args) => client.run(args, { cwd: root });
+  const remote = git('remote', 'get-url', 'origin');
+  normalizeRepositoryUrl(remote);
   if (git('branch', '--show-current') !== 'main') throw new Error('В папке репозитория должна быть выбрана ветка main.');
   if (git('status', '--porcelain')) throw new Error('В папке репозитория есть несохраненные изменения. Публикация отменена.');
+  if (remote !== client.url) git('remote', 'set-url', 'origin', client.url);
   git('fetch', 'origin', 'main');
   git('merge', '--ff-only', 'refs/remotes/origin/main');
   return root;
 };
 
 const handleRequest = async (request) => {
+  if (request.command === 'git-settings') return readGitSettings(request.repoDir);
+  if (request.command === 'git-login') {
+    const client = createGitClient(request);
+    if (!client.https) throw new Error('Вход через Git Credential Manager используется с HTTPS URL.');
+    client.run(['credential-manager', 'github', 'login', '--url', 'https://github.com', '--browser',
+      ...(request.githubLogin ? ['--username', request.githubLogin] : [])]);
+    return { message: 'Вход в GitHub выполнен.' };
+  }
   if (request.command === 'inspect') {
     const payload = readBackup(request.backupPath);
     return { works: payload.collections.works.length, clients: payload.collections.clients.length,
@@ -38,9 +47,13 @@ const handleRequest = async (request) => {
   if (request.command === 'apply') return applyReconciliation(request);
   if (request.command === 'publish') {
     if (!request.password) throw new Error('Введите пароль статичного сайта.');
-    const repoDir = ensureRepository(request.repoDir);
+    const identity = validateIdentity(request);
+    const client = createGitClient(request);
+    const repoDir = ensureRepository(request.repoDir, client);
+    configureIdentity(repoDir, identity, client.run);
     const messages = [];
-    const result = await publishBackup({ repoDir, backupPath: request.backupPath, password: request.password, log: (message) => messages.push(message) });
+    const result = await publishBackup({ repoDir, backupPath: request.backupPath, password: request.password,
+      gitCommand: client.run, log: (message) => messages.push(message) });
     return { ...result, messages };
   }
   throw new Error('Неизвестная команда.');

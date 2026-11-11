@@ -6,7 +6,7 @@ const { resolve } = require('node:path');
 const { gzipSync } = require('node:zlib');
 const XLSX = require('../../xlsx.full.min.js');
 const { readBackup } = require('../publish-backup.cjs');
-const { paymentAmount, paymentDate, paymentDetails } = require('../../work-payments.js');
+const { paymentAmount, paymentDate, paymentDateTime, normalizePaymentFields, isFullyPaid } = require('../../work-payments.js');
 
 const text = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const lower = (value) => text(value).toLowerCase().replaceAll('\u0451', '\u0435');
@@ -14,12 +14,16 @@ const id = (value) => typeof value === 'string' ? value : value?.$oid || id(valu
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const cents = (value) => Math.round(Number(value || 0) * 100);
 const normalizedNumber = (value) => text(value).replace(/^0+(?=\d)/, '').toUpperCase();
-const dateValue = (value) => {
+const dateValue = (value, numberFormat = '', date1904 = false) => {
   if (typeof value === 'number') {
-    const d = XLSX.SSF.parse_date_code(value);
-    return d ? paymentDate(`${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`) : null;
+    const d = XLSX.SSF.parse_date_code(value, { date1904 });
+    if (!d) return null;
+    const pad = (number) => String(number).padStart(2, '0');
+    const date = `${d.y}-${pad(d.m)}-${pad(d.d)}`;
+    const hasTime = Math.abs(value % 1) > 0.000000001 || /[hs]/i.test(numberFormat.replace(/"[^"]*"|\[[^\]]*\]/g, ''));
+    return paymentDateTime(hasTime ? `${date}T${pad(d.H)}:${pad(d.M)}:${pad(Math.floor(d.S))}` : date);
   }
-  return paymentDate(value);
+  return paymentDateTime(value);
 };
 const money = (value) => {
   const amount = typeof value === 'number' ? value : Number(text(value).replace(/\s/g, '').replace(',', '.'));
@@ -30,7 +34,7 @@ const parseBankWorkbook = (buffer, collections, organizationId) => {
   const organizations = collections.organizations || [];
   const organization = organizations.find((item) => id(item._id) === organizationId);
   if (!organization) throw new Error('Выберите организацию из бекапа.');
-  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false, cellNF: true });
   const result = [];
   let supported = false;
   for (const sheetName of workbook.SheetNames) {
@@ -47,14 +51,15 @@ const parseBankWorkbook = (buffer, collections, organizationId) => {
       if (values.every((value) => text(value) === '')) continue;
       const get = (name) => values[index(name)];
       const amount = money(get('Сумма'));
-      const date = dateValue(get('Дата'));
+      const dateCell = workbook.Sheets[sheetName][XLSX.utils.encode_cell({ r: rowIndex, c: index('Дата') })];
+      const date = dateValue(get('Дата'), dateCell?.z, Boolean(workbook.Workbook?.WBProps?.date1904));
       const payer = text(get(isEvents ? 'Контрагент' : 'Плательщик'));
       const payerInn = text(get(isEvents ? 'ИНН' : 'ИНН/КИО Плательщика'));
       const recipientInn = text(get('ИНН Получателя'));
       const purpose = text(get('Назначение'));
       const documentNumber = text(get(isEvents ? 'Наименование' : 'Номер'));
       const bankPaymentId = hash(JSON.stringify([text(organization.inn) || text(organization.bankAccount) || organizationId,
-        date, amount, normalizedNumber(documentNumber), payerInn || lower(payer), lower(purpose)]));
+        paymentDate(date), amount, normalizedNumber(documentNumber), payerInn || lower(payer), lower(purpose)]));
       let blockedReason = '';
       if (!date || amount == null) blockedReason = 'Неверная дата или сумма';
       else if (!['исполнен', 'исполнено', 'проведен', 'зачислен', 'выполнен', 'completed'].includes(lower(get('Статус')))) blockedReason = 'Платеж не исполнен';
@@ -84,7 +89,9 @@ const getInvoices = (collections, organizationId) => {
       const client = clients.get(id(work.clientId)) || {};
       const date = paymentDate(work.invoiceDate) || paymentDate(work.actDate);
       return { id: id(work._id), number: text(work.invoiceNumber), date, amount: Number(work.amount || 0),
-        paidAmount: paymentAmount(work.paymentAmount), client: text(client.name), clientInn: text(client.inn),
+        paidAmount: work.paymentAmount != null ? paymentAmount(work.paymentAmount)
+          : bankEntries(work).length || work.paymentDate ? paymentAmount(work.creditedAmount) : null,
+        client: text(client.name), clientInn: text(client.inn),
         ledgerAmount: bankEntries(work).reduce((sum, entry) => sum + cents(entry.amount), 0) / 100,
         label: `№ ${work.invoiceNumber} от ${date || '—'} · ${client.name || '—'} · ${Number(work.amount || 0).toLocaleString('ru-RU')} ₽` };
     });
@@ -151,6 +158,7 @@ const applyReconciliation = ({ backupPath, bankPath, organizationId, backupHash,
   }
   if (!selected.size) throw new Error('Выберите хотя бы один платеж и счет.');
   const payload = readBackup(backupPath);
+  payload.collections.works = payload.collections.works.map(normalizePaymentFields);
   const works = new Map(payload.collections.works.map((work) => [id(work._id), work]));
   const changed = new Set();
   for (const { row, allocations: shares } of selected.values()) for (const [workId, amountCents] of shares) {
@@ -167,9 +175,9 @@ const applyReconciliation = ({ backupPath, bankPath, organizationId, backupHash,
   }
   for (const workId of changed) {
     const work = works.get(workId);
-    work.paymentAmount = work.bankPayments.reduce((sum, entry) => sum + cents(entry.amount), 0) / 100;
-    work.paymentDate = work.bankPayments.map((entry) => paymentDate(entry.date)).filter(Boolean).sort().at(-1) || null;
-    work.isPayed = paymentDetails(work).isPayed;
+    work.creditedAmount = work.bankPayments.reduce((sum, entry) => sum + cents(entry.amount), 0) / 100;
+    work.paymentDate = work.bankPayments.map((entry) => paymentDateTime(entry.date)).filter(Boolean).sort().at(-1) || null;
+    work.isPayed = isFullyPaid(work, work.creditedAmount);
   }
   payload.meta = { ...payload.meta, createdAt: new Date().toISOString(), paymentsUpdatedAt: new Date().toISOString() };
   const temporary = `${resolve(outputPath)}.payments-${process.pid}.tmp`;
