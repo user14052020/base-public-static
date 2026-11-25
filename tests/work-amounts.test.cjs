@@ -76,7 +76,7 @@ const loadApp = () => {
   const source = readFileSync(join(__dirname, '../app.js'), 'utf8');
   const listeners = {};
   const context = {
-    window: { OffersWorkAmounts: amounts, OffersWorkPayments: require('../work-payments.js'), OffersBrowserFeatures: require('../browser-features.js'), location: { href: 'https://example.test/' } },
+    window: { OffersWorkAmounts: amounts, OffersWorkPayments: require('../work-payments.js'), OffersBrowserFeatures: require('../browser-features.js'), OffersSettlementView: require('../settlement-view.js'), location: { href: 'https://example.test/' } },
     document: { getElementById: () => ({}), addEventListener: (name, handler) => { listeners[name] = handler; } },
     sessionStorage: { getItem: () => null },
     localStorage: { setItem: () => {} },
@@ -85,10 +85,72 @@ const loadApp = () => {
   };
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
     globalThis.testApp = { state, normalizeWork, aggregateReport, backupPayload, dbFromCollections,
-      reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm, shell };
+      reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm, shell,
+      filteredWorks, renderWorks, renderWorkResults, printableShell, amountToWords, personShortName, sanitizeDocumentPart, element: app };
   })();`), context);
-  return { ...context.testApp, listeners, window: context.window };
+  return { ...context.testApp, listeners, window: context.window, document: context.document };
 };
+
+const filterFixture = () => {
+  const app = loadApp();
+  app.state.db = app.dbFromCollections({ organizations: [{ _id: 'org', name: 'Executor' }],
+    clients: [{ _id: 'one', name: 'Same client name' }, { _id: 'two', name: 'Same client name' }],
+    works: [
+      { ...makeWork(null), _id: 'older', clientId: 'one', executorOrganizationId: 'org', actDate: '2025-11-25', invoiceDate: '2025-11-25' },
+      { ...makeWork(null), _id: 'first', clientId: 'one', executorOrganizationId: 'org', actDate: '2026-11-01', invoiceDate: '2026-11-01' },
+      { ...makeWork(null), _id: 'last', clientId: 'one', executorOrganizationId: 'org', actDate: '2026-11-30T23:59:59.999Z', invoiceDate: '2026-11-30', items: [{ name: 'Backend', quantity: 1, price: 100 }] },
+      { ...makeWork(null), _id: 'other-client', clientId: 'two', executorOrganizationId: 'org', actDate: '2026-11-15', invoiceDate: '2026-11-15' },
+      { ...makeWork(null), _id: 'next', clientId: 'one', executorOrganizationId: 'org', actDate: '2026-12-01', invoiceDate: '2026-12-01' }
+    ] });
+  return app;
+};
+
+test('work filters combine exact client, inclusive document dates, and the existing text search', () => {
+  const app = filterFixture();
+  const ids = () => Array.from(app.filteredWorks(), (work) => work._id);
+  assert.deepEqual(ids(), ['next', 'last', 'other-client', 'first', 'older']);
+  app.state.workFilters = { clientId: 'one', dateFrom: '2026-11-01', dateTo: '2026-11-30' };
+  assert.deepEqual(ids(), ['last', 'first']);
+  app.state.query = '  BACKEND ';
+  assert.deepEqual(ids(), ['last']);
+  app.state.query = 'Executor';
+  assert.deepEqual(ids(), ['last', 'first']);
+  app.state.query = '';
+  app.state.workFilters.dateFrom = '';
+  assert.deepEqual(ids(), ['last', 'first', 'older']);
+  app.state.workFilters.dateFrom = '2026-12-01';
+  app.state.workFilters.dateTo = '';
+  assert.deepEqual(ids(), ['next']);
+  app.state.workFilters.dateTo = '2026-11-30';
+  assert.deepEqual(ids(), []);
+  assert.match(app.renderWorkResults(), /Начало периода не может быть позже окончания/);
+});
+
+test('changing and resetting filters preserves the editor DOM and never mutates accounting data', async () => {
+  const app = filterFixture();
+  const original = JSON.stringify(app.state.db);
+  const results = { innerHTML: '' };
+  const inputs = Object.fromEntries(['work-search', 'work-client', 'work-date-from', 'work-date-to'].map((key) => [key, { value: '', max: '', min: '' }]));
+  app.document.querySelector = (selector) => selector === '[data-work-results]' ? results : inputs[/data-input="([^"]+)"/.exec(selector)?.[1]];
+  app.element.innerHTML = 'unsaved editor DOM';
+  app.listeners.change({ target: { dataset: { input: 'work-client' }, value: 'one' } });
+  app.listeners.change({ target: { dataset: { input: 'work-date-from' }, value: '2026-11-01' } });
+  assert.equal(inputs['work-date-to'].min, '2026-11-01');
+  app.listeners.input({ target: { dataset: { input: 'work-search' }, value: 'Backend' } });
+  assert.match(results.innerHTML, /Backend/);
+  assert.equal(app.element.innerHTML, 'unsaved editor DOM');
+  for (const input of Object.values(inputs)) input.value = 'active-filter';
+  const button = { dataset: { action: 'reset-search' } };
+  await app.listeners.click({ target: { closest: () => button } });
+  assert.equal(app.state.query, '');
+  assert.equal(app.state.workFilters.clientId, '');
+  assert.equal(app.state.workFilters.dateFrom, '');
+  assert.equal(app.state.workFilters.dateTo, '');
+  assert.equal(app.element.innerHTML, 'unsaved editor DOM');
+  assert.ok(Object.values(inputs).every((input) => input.value === ''));
+  assert.equal(inputs['work-date-to'].min, '');
+  assert.equal(JSON.stringify(app.state.db), original);
+});
 
 test('shared pages do not display the obsolete published-backup banner', () => {
   const app = loadApp();

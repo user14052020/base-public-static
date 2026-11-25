@@ -3,6 +3,25 @@
 Static accounting application at https://offers.maharram.ru, published from `main` on GitHub Pages.
 No Windows client, local server, Git installation, or virtual machine is needed to use it.
 
+## Work Filters And Reconciliation
+
+Works can be filtered by client and an inclusive document-date interval, together with text search.
+Changing or resetting filters updates only the results, preserving an open work editor.
+
+The Reconciliation page shows each client's UPD turnover, actual payments, and opening/closing balances.
+Every document work contributes its UPD amount, with the work total as the automatic default. Set the
+UPD amount to zero for advance-only invoices that must not accrue a second delivery. Kwork entries do
+not issue UPD and are excluded from this document-based reconciliation.
+
+Bank payment history is used once, with split allocations consolidated. Manual payments use their
+receipt dates. Undated paid works and inconsistent payment totals are flagged instead of assigning
+invented receipt dates; PDF output is blocked until these issues are corrected. Opening balance is
+calculated from earlier operations and can be overridden for incomplete historical records.
+
+The printable statement follows the supplied two-sided reconciliation layout with page carry-forwards,
+turnover totals, closing debt, and signatures. Counterpart accounting columns remain blank unless the
+user explicitly chooses to fill them. Reports do not change income totals or the underlying database.
+
 ## Bank Payments
 
 On the Payments page, select an organization and a bank Excel export. Operations (`Events.xlsx`)

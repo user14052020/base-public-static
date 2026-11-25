@@ -26,6 +26,7 @@
     editingWorkId: null,
     editingClientId: null,
     query: '',
+    workFilters: { clientId: '', dateFrom: '', dateTo: '' },
     paidOnly: true,
     message: null,
     password: null
@@ -298,6 +299,17 @@
   const workDate = (work) => parseDate(work.actDate) || parseDate(work.invoiceDate) || new Date(0);
   const sortedWorks = () =>
     [...state.db.works].sort((left, right) => workDate(right).getTime() - workDate(left).getTime());
+  const filteredWorks = () => {
+    const query = normalizeText(state.query).toLowerCase();
+    const { clientId, dateFrom, dateTo } = state.workFilters;
+    return sortedWorks().filter((work) => {
+      if (clientId && work.clientId !== clientId) return false;
+      const date = dateInput(workDate(work));
+      if (dateFrom && date < dateFrom || dateTo && date > dateTo) return false;
+      return !query || [workTitle(work), clientName(work.clientId), organizationName(work.executorOrganizationId), work.actNumber, work.invoiceNumber]
+        .join(' ').toLowerCase().includes(query);
+    });
+  };
 
   const nextNumber = (year, field) => {
     const max = state.db.works
@@ -612,6 +624,7 @@
       .mini-line { display: grid; grid-template-columns: 30mm 1fr 9mm; align-items: end; min-height: 12mm; }
       .mini-line .value { border-bottom: 1px solid #111; min-height: 4mm; text-align: center; }
       .stamp { margin-top: 2mm; text-align: center; }
+      ${options.styles || ''}
       @media print {
         @page { size: ${pageSize}; margin: 0; }
         .no-print { display: none; }
@@ -871,6 +884,14 @@
       { pdf: true }
     );
   };
+  const openPrintWindow = (htmlDocument) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) throw new Error('Браузер заблокировал окно печати');
+    printWindow.document.open();
+    printWindow.document.write(htmlDocument);
+    printWindow.document.close();
+  };
+
   const openPrintDocument = (kind, workId) => {
     const work = state.db.works.find((item) => item._id === workId);
     if (!work) throw new Error('Работа не найдена');
@@ -884,11 +905,7 @@
         : kind === 'upd'
           ? updDocument(normalizedWork, organization, client)
           : invoiceDocument(normalizedWork, organization, client);
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) throw new Error('Браузер заблокировал окно печати');
-    printWindow.document.open();
-    printWindow.document.write(htmlDocument);
-    printWindow.document.close();
+    openPrintWindow(htmlDocument);
   };
 
   const shell = (content) => `
@@ -903,6 +920,7 @@
           ${navButton('works', 'Работы')}
           ${navButton('clients', 'Клиенты')}
           ${navButton('report', 'Отчет')}
+          ${navButton('settlement', 'Сверка')}
           ${navButton('payments', 'Платежи')}
           ${navButton('github', 'GitHub')}
           ${navButton('backup', 'Бэкапы')}
@@ -937,14 +955,6 @@
   };
 
   const renderWorks = () => {
-    const query = normalizeText(state.query).toLowerCase();
-    const works = sortedWorks().filter((work) => {
-      if (!query) return true;
-      return [workTitle(work), clientName(work.clientId), organizationName(work.executorOrganizationId), work.actNumber, work.invoiceNumber]
-        .join(' ')
-        .toLowerCase()
-        .includes(query);
-    });
     app.innerHTML = shell(`
       <section class="panel stack">
         <div class="row between">
@@ -954,13 +964,28 @@
           </div>
           <button data-action="new-work">Новая работа</button>
         </div>
-        <div class="row">
-          <input style="max-width:520px" data-input="work-search" placeholder="Поиск по работам, клиентам, номерам" value="${html(state.query)}" />
+        <div class="work-filters">
+          <label>Поиск<input data-input="work-search" placeholder="Поиск по работам, клиентам, номерам" value="${html(state.query)}" /></label>
+          <label>Клиент<select data-input="work-client">
+            <option value="">Все клиенты</option>
+            ${[...state.db.clients].sort((left, right) => left.name.localeCompare(right.name, 'ru')).map((client) => `<option value="${html(client._id)}" ${client._id === state.workFilters.clientId ? 'selected' : ''}>${html(client.name)}</option>`).join('')}
+          </select></label>
+          <label>Дата документа с<input type="date" data-input="work-date-from" value="${html(state.workFilters.dateFrom)}" max="${html(state.workFilters.dateTo)}" /></label>
+          <label>Дата документа по<input type="date" data-input="work-date-to" value="${html(state.workFilters.dateTo)}" min="${html(state.workFilters.dateFrom)}" /></label>
           <button class="secondary" data-action="reset-search">Сброс</button>
         </div>
       </section>
       ${renderWorkForm()}
-      <section class="panel">
+      <section class="panel" data-work-results>${renderWorkResults()}</section>
+    `);
+  };
+
+  const renderWorkResults = () => {
+    const works = filteredWorks();
+    const { dateFrom, dateTo } = state.workFilters;
+    const invalidPeriod = dateFrom && dateTo && dateFrom > dateTo;
+    return `
+        ${invalidPeriod ? '<p class="message error" role="alert">Начало периода не может быть позже окончания.</p>' : `<p class="muted" role="status">Найдено: ${works.length} из ${state.db.works.length}</p>`}
         <div class="table-wrap">
           <table>
             <thead>
@@ -997,9 +1022,17 @@
             </tbody>
           </table>
         </div>
-        ${works.length ? '' : '<p class="muted">Работы не найдены.</p>'}
-      </section>
-    `);
+        ${works.length || invalidPeriod ? '' : '<p class="muted">Работы не найдены.</p>'}
+    `;
+  };
+
+  const updateWorkResults = () => {
+    const results = document.querySelector('[data-work-results]');
+    if (results) results.innerHTML = renderWorkResults();
+    const dateFrom = document.querySelector('[data-input="work-date-from"]');
+    const dateTo = document.querySelector('[data-input="work-date-to"]');
+    if (dateFrom) dateFrom.max = state.workFilters.dateTo;
+    if (dateTo) dateTo.min = state.workFilters.dateFrom;
   };
 
   const emptyWork = () => ({
@@ -1614,6 +1647,7 @@
     }
     if (state.view === 'clients') renderClients();
     else if (state.view === 'report') renderReport();
+    else if (state.view === 'settlement') app.innerHTML = shell(settlementView.render());
     else if (state.view === 'backup') renderBackup();
     else if (state.view === 'payments') app.innerHTML = shell(browserFeatures.renderPayments());
     else if (state.view === 'github') app.innerHTML = shell(browserFeatures.renderGithub());
@@ -1645,10 +1679,11 @@
 
   document.addEventListener('input', (event) => {
     const target = event.target;
+    if (settlementView.handleInput(target)) return;
     if (browserFeatures.handleInput(target)) return;
     if (target.dataset.input === 'work-search') {
       state.query = target.value;
-      renderWorks();
+      updateWorkResults();
     }
     if (target.name === 'updAmount') {
       target.dataset.auto = target.value === '' ? 'true' : 'false';
@@ -1667,7 +1702,14 @@
   });
 
   document.addEventListener('change', (event) => {
-    browserFeatures.handleChange(event.target);
+    const target = event.target;
+    if (settlementView.handleChange(target)) return;
+    if (browserFeatures.handleChange(target)) return;
+    const filter = { 'work-client': 'clientId', 'work-date-from': 'dateFrom', 'work-date-to': 'dateTo' }[target.dataset.input];
+    if (filter) {
+      state.workFilters[filter] = target.value;
+      updateWorkResults();
+    }
   });
 
   document.addEventListener('click', async (event) => {
@@ -1676,6 +1718,7 @@
     clearMessage();
     const action = target.dataset.action;
     try {
+      if (settlementView.handleAction(action, target)) return;
       if (await browserFeatures.handleAction(action, target)) return;
       if (target.dataset.view) {
         state.view = target.dataset.view;
@@ -1695,6 +1738,7 @@
         renderWorks();
       }
       if (action === 'edit-work') {
+        state.view = 'works';
         state.editingWorkId = target.dataset.id;
         renderWorks();
       }
@@ -1720,7 +1764,12 @@
       }
       if (action === 'reset-search') {
         state.query = '';
-        renderWorks();
+        state.workFilters = { clientId: '', dateFrom: '', dateTo: '' };
+        for (const name of ['work-search', 'work-client', 'work-date-from', 'work-date-to']) {
+          const input = document.querySelector(`[data-input="${name}"]`);
+          if (input) input.value = '';
+        }
+        updateWorkResults();
       }
       if (action === 'print-doc') {
         openPrintDocument(target.dataset.doc, target.dataset.id);
@@ -1798,6 +1847,10 @@
     saveDb, render, message: showMessage, confirm: (message) => confirm(message),
     getPassword: () => state.password,
     getSeed: () => window.__OFFERS_SEED_ENCRYPTED__, setSeed: (packet) => { window.__OFFERS_SEED_ENCRYPTED__ = packet; }
+  });
+  const settlementView = window.OffersSettlementView.create({
+    html, formatMoney, displayDate, paymentDateText, document, amountToWords, personShortName, printableShell, sanitizeDocumentPart,
+    today: todayInput, getDb: () => state.db, render, openDocument: openPrintWindow
   });
   window.addEventListener?.('pagehide', () => { browserFeatures.clearSecrets(); state.password = null; });
 
