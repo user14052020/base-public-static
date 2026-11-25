@@ -462,3 +462,19 @@ test('changing the work party first requires saving it before a receipt can be e
   assert.equal(message.hidden, false);
   assert.match(message.textContent, /Сначала сохраните/);
 });
+
+test('work table shows the current client INN below its name, preserving leading zeros and omitting missing INNs', () => {
+  const app = loadApp();
+  app.state.db = app.dbFromCollections({ clients: [{ _id: 'client-one', name: 'Buyer & Co', inn: '001234567890' }, { _id: 'client-two', name: 'Private buyer', inn: ' ' }],
+    works: [{ ...makeWork(null), _id: 'first', clientId: 'client-one' }, { ...makeWork(null), _id: 'second', clientId: 'client-two' }] });
+  const before = JSON.stringify(app.state.db);
+  const markup = app.renderWorkResults();
+  assert.match(markup, /Buyer &amp; Co<small class="work-client-inn">ИНН 001234567890<\/small>/);
+  assert.equal((markup.match(/class="work-client-inn"/g) || []).length, 1);
+  assert.equal(JSON.stringify(app.state.db), before);
+  app.state.db.clients[0].inn = '<img src=x onerror=alert(1)>';
+  const updated = app.renderWorkResults();
+  assert.doesNotMatch(updated, /<img/);
+  assert.match(updated, /ИНН &lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(updated, /001234567890/);
+});

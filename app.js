@@ -1076,13 +1076,15 @@
             </thead>
             <tbody>
               ${works
-                .map(
-                  (work) => `
+                .map((work) => {
+                  const client = getClient(work.clientId);
+                  const inn = normalizeText(client?.inn);
+                  return `
                 <tr>
                   <td>${displayDate(work.actDate || work.invoiceDate)}</td>
                   <td>${html(workTitle(work))}</td>
                   <td>${html(organizationName(work.executorOrganizationId))}</td>
-                  <td>${html(clientName(work.clientId))}</td>
+                  <td>${html(client?.name || '—')}${inn ? `<small class="work-client-inn">ИНН ${html(inn)}</small>` : ''}</td>
                   <td>${documentsCell(work)}</td>
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
                   <td class="work-money"><div>Заказ: ${formatMoney(getOrderAmount(work))}</div><div>Счет: ${formatMoney(getInvoiceAmount(work))}</div><div>УПД: ${formatMoney(getUpdAmount(work))}</div><small>${html(work.currency || 'RUB')}</small></td>
@@ -1096,8 +1098,8 @@
                     </div>
                   </td>
                 </tr>
-              `
-                )
+              `;
+                })
                 .join('')}
             </tbody>
           </table>
