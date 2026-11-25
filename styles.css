@@ -21,7 +21,6 @@
 [hidden] { display:none !important; }
 .work-money { min-width:145px; white-space:nowrap; }
 .work-money div + div { margin-top:4px; }
-.work-balance { display:block; margin-top:8px; white-space:nowrap; }
 .work-payment-history { margin-top:6px; min-width:160px; font-size:12px; }
 .work-payment-history summary { cursor:pointer; }
 .work-payment-history div { padding-top:6px; white-space:nowrap; }

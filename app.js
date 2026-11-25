@@ -356,7 +356,6 @@
     form.querySelector('[data-work-total]').value = formatMoney(amount);
     if (form.orderAmount?.dataset.auto === 'true') form.orderAmount.value = String(amount);
     if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount, orderAmount: form.orderAmount?.value }));
-    updateWorkPaymentTotals(form);
   };
   const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
   const getClient = (id) => state.db.clients.find((item) => item._id === id);
@@ -1023,15 +1022,6 @@
     <label>Сумма привязки<input name="linkedPaymentAmount" type="number" min="0.01" step="0.01" value="${html(entry.amount ?? '')}" /></label>
     <label>Назначение<select name="linkedPaymentKind"><option value="payment">Оплата</option><option value="advance" ${entry.kind === 'advance' ? 'selected' : ''}>Аванс</option></select></label>
     <button type="button" class="danger" data-action="remove-work-payment">Отвязать</button></div>`;
-  const updateWorkPaymentTotals = (form) => {
-    if (!form?.querySelectorAll) return;
-    const entries = [...form.querySelectorAll('[data-work-payment-row]')];
-    const total = entries.reduce((sum, row) => sum + toNumber(row.querySelector('[name="linkedPaymentAmount"]')?.value, 0), 0);
-    const received = form.querySelector('[data-work-received]'); const balance = form.querySelector('[data-work-balance]');
-    if (received) received.value = formatMoney(total);
-    if (balance) balance.value = formatMoney((normalizeUpdAmount(form.orderAmount?.value) ?? workFormAmount(form)) - total);
-  };
-
   const renderWorks = () => {
     app.innerHTML = shell(`
       <section class="panel stack">
@@ -1086,7 +1076,7 @@
                   <td class="work-money"><div>Заказ: ${formatMoney(getOrderAmount(work))}</div><div>Счет: ${formatMoney(getInvoiceAmount(work))}</div><div>УПД: ${formatMoney(getUpdAmount(work))}</div><small>${html(work.currency || 'RUB')}</small></td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
                   <td>${html(paymentDateText(work.paymentDate) || '—')}${workPaymentHistory(work)}</td>
-                  <td><label class="switch" title="Статус рассчитывается по привязанным платежам"><input type="checkbox" disabled ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.creditedAmount > 0 ? 'Частично' : 'Нет'}</label><small class="work-balance">Остаток: ${formatMoney(work.source === 'kwork' ? 0 : getOrderAmount(work) - work.creditedAmount)}</small></td>
+                  <td><label class="switch" title="Статус рассчитывается по привязанным платежам"><input type="checkbox" disabled ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.creditedAmount > 0 ? 'Частично' : 'Нет'}</label></td>
                   <td>
                     <div class="row">
                       <button class="secondary" data-action="edit-work" data-id="${html(work._id)}">Редактировать</button>
@@ -1171,7 +1161,6 @@
             <label>Дата операции Kwork<input name="paymentDate" placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(work.paymentDate))}" /></label>
           </div>
           <div data-work-direct-payments ${work.source !== 'kwork' ? '' : 'hidden'} class="stack">
-            <div class="grid two"><label>Получено по платежам<input data-work-received readonly value="${html(formatMoney(work.creditedAmount || 0))}" /></label><label>Осталось по заказу<input data-work-balance readonly value="${html(formatMoney(getOrderAmount(work) - (work.creditedAmount || 0)))}" /></label></div>
             <div class="row between"><h3>Привязанные платежи</h3><button type="button" class="secondary" data-action="add-work-payment">Выбрать платеж</button></div>
             <div class="stack" data-work-payment-rows>${(work._id ? ledger.workPayments(state.db, work._id) : []).map((entry) => workPaymentRow(entry, work)).join('')}</div>
           </div>
@@ -1748,7 +1737,6 @@
       if (row) updateWorkItemAmount(row);
       updateWorkTotals(target.closest('form'));
     }
-    if (target.name === 'linkedPaymentAmount') updateWorkPaymentTotals(target.closest('form'));
   });
 
   document.addEventListener('change', (event) => {
@@ -1814,7 +1802,7 @@
         row.innerHTML = workPaymentRow({}, { _id: form._id.value, clientId: form.clientId.value, executorOrganizationId: form.executorOrganizationId.value });
         form.querySelector('[data-work-payment-rows]').appendChild(row.firstElementChild);
       }
-      if (action === 'remove-work-payment') { const form = target.closest('form'); target.closest('[data-work-payment-row]').remove(); updateWorkPaymentTotals(form); }
+      if (action === 'remove-work-payment') target.closest('[data-work-payment-row]').remove();
       if (action === 'reset-search') {
         state.query = '';
         state.workFilters = { clientId: '', dateFrom: '', dateTo: '' };

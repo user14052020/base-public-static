@@ -410,3 +410,17 @@ test('legacy separate invoice totals migrate into positions once and survive bac
   assert.equal(restored.works[0].updAmount, 48000);
   assert.ok(!('invoiceAmount' in backup.collections.works[0]));
 });
+
+test('work payment totals and remaining-order widgets are removed without changing receipts or allocations', () => {
+  const app = loadApp();
+  app.state.db = app.dbFromCollections({ works: [{ ...makeWork(48000), orderAmount: 48000, paymentDate: '2026-11-11' }] });
+  app.state.editingWorkId = app.state.db.works[0]._id;
+  const before = JSON.stringify(app.backupPayload().collections);
+  const markup = app.renderWorkForm() + app.renderWorkResults();
+  assert.doesNotMatch(markup, /Получено по платежам|Осталось по заказу|data-work-received|data-work-balance|work-balance/);
+  assert.match(markup, /name="linkedPaymentId"/);
+  assert.match(markup, /name="linkedPaymentAmount"/);
+  assert.equal(JSON.stringify(app.backupPayload().collections), before);
+  const source = readFileSync(join(__dirname, '../app.js'), 'utf8');
+  assert.doesNotMatch(source, /updateWorkPaymentTotals|data-work-received|data-work-balance/);
+});
