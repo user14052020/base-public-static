@@ -162,7 +162,7 @@
       const payment = entry.payment;
       return { paymentId: id(payment._id), bankPaymentId: payment.bankPaymentId, source: payment.source, date: payment.date, amount: entry.amount,
         originalAmount: payment.amount, documentNumber: payment.documentNumber || '', payer: payment.payer || '', payerInn: payment.payerInn || '',
-        purpose: payment.purpose || '', kind: entry.kind };
+        purpose: payment.purpose || '', kind: entry.kind, ...(payment.reviewStatus ? { reviewStatus: payment.reviewStatus, duplicateOf: payment.duplicateOf } : {}) };
     }) });
     return { ...collections, works };
   };

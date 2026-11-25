@@ -10,7 +10,12 @@
     if (Object.keys(value).length === 1 && (value.$date || value.$oid)) return value.$date || value.$oid;
     return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
   };
-  const matches = (record, fields) => Object.entries(fields).every(([key, value]) => JSON.stringify(canonical(record[key])) === JSON.stringify(canonical(value)));
+  const contains = (actual, expected) => {
+    if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === expected.length && expected.every((value, index) => contains(actual[index], value));
+    if (expected && typeof expected === 'object') return actual && typeof actual === 'object' && Object.entries(expected).every(([key, value]) => contains(actual[key], value));
+    return actual === expected;
+  };
+  const matches = (record, fields) => Object.entries(fields).every(([key, value]) => contains(canonical(record[key]), canonical(value)));
   const apply = (payload, revisions = []) => {
     let collections = payload.collections;
     const applied = new Set(payload.meta?.appliedDataRevisions || []);

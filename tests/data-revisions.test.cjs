@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { apply } = require('../data-revisions.js');
+const ledger = require('../payment-ledger.js');
 const revisions = [{ id: 'fix-receipts', updates: [
   { collection: 'works', id: 'one', expected: [{ creditedAmount: 48000 }], fields: { creditedAmount: 24000 } },
   { collection: 'works', id: 'two', expected: [{ creditedAmount: 24000 }], fields: { creditedAmount: 48000 } }
@@ -18,4 +19,18 @@ test('published corrections are conditional, atomic, idempotent and preserve unr
   const conflict = apply(changed, revisions);
   assert.deepEqual(conflict.collections, changed.collections);
   assert.deepEqual(conflict.meta.dataRevisionConflicts, ['fix-receipts']);
+});
+
+test('a canonical roundtrip recognizes an already-correct legacy projection without replacing its journal', () => {
+  const c = ledger.normalize({ works: [{ _id: 'one', source: 'document', clientId: 'client', executorOrganizationId: 'org', amount: 100,
+    creditedAmount: 100, paymentDate: '2026-11-25', bankPayments: [{ bankPaymentId: 'bank', date: '2026-11-25', amount: 100, originalAmount: 100 }] }] });
+  const revision = { id: 'roundtrip', updates: [{ collection: 'works', id: 'one', expected: [], fields: { creditedAmount: 100,
+    bankPayments: [{ bankPaymentId: 'bank', date: '2026-11-25', amount: 100, originalAmount: 100 }] } }] };
+  const result = apply({ collections: c }, [revision]);
+  assert.deepEqual(result.meta.appliedDataRevisions, ['roundtrip']);
+  assert.deepEqual(result.collections, c);
+  const edited = structuredClone(c); edited.payments[0].date = '2026-11-24';
+  const conflict = apply({ collections: edited }, [revision]);
+  assert.deepEqual(conflict.meta.dataRevisionConflicts, ['roundtrip']);
+  assert.deepEqual(conflict.collections, edited);
 });

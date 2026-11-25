@@ -10,7 +10,7 @@
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
   const { normalizeUpdAmount, getOrderAmount, getInvoiceAmount, getUpdAmount, getUpdItems, getInvoiceItems, getOrderItems } = window.OffersWorkAmounts;
   const ledger = window.OffersPaymentLedger;
-  const { paymentDate, paymentTime, paymentDateTime, normalizePaymentFields, isFullyPaid } = window.OffersWorkPayments;
+  const { paymentDate, paymentTime, paymentDateTime, normalizePaymentFields } = window.OffersWorkPayments;
   const paymentDateText = (value) => {
     const date = paymentDate(value);
     if (!date) return '';
@@ -34,7 +34,6 @@
   };
 
   const money = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
 
   const html = (value) =>
     String(value ?? '')
@@ -222,8 +221,8 @@
     sequences: collections.sequences || [],
     users: collections.users || [],
     files: collections.files || [],
-    uploadsFiles: collections['uploads.files'] || [],
-    uploadsChunks: collections['uploads.chunks'] || []
+    uploadsFiles: collections['uploads.files'] || collections.uploadsFiles || [],
+    uploadsChunks: collections['uploads.chunks'] || collections.uploadsChunks || []
     };
   };
   const replaceCollections = (collections) => { state.db = dbFromCollections(collections, state.db.meta); };
@@ -1555,6 +1554,7 @@
   const restoreBackup = async (file) => {
     const text = await readBackupFile(file);
     const payload = reviveMongo(JSON.parse(text));
+    if (!['organizations', 'clients', 'works'].every((name) => Array.isArray(payload.collections?.[name]))) throw new Error('В бекапе отсутствуют обязательные коллекции');
     const revisions = [...new Map([...(state.db.meta?.dataRevisions || []), ...(payload.meta?.dataRevisions || [])].map((revision) => [revision.id, revision])).values()];
     const revised = window.OffersDataRevisions.apply(payload, revisions);
     state.db = dbFromCollections(revised.collections, { ...revised.meta, restoredAt: new Date().toISOString() });
@@ -1861,8 +1861,8 @@
         renderClients();
       }
       if (action === 'delete-client') {
-        const used = state.db.works.some((work) => work.clientId === target.dataset.id);
-        if (used) throw new Error('Нельзя удалить клиента, который используется в работах');
+        const used = state.db.works.some((work) => work.clientId === target.dataset.id) || state.db.payments.some((payment) => payment.clientId === target.dataset.id);
+        if (used) throw new Error('Нельзя удалить клиента, который используется в работах или платежах');
         if (confirm('Удалить клиента?')) {
           state.db.clients = state.db.clients.filter((client) => client._id !== target.dataset.id);
           saveDb();

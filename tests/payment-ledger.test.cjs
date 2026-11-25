@@ -154,3 +154,12 @@ test('a work can change its client after explicitly removing its payment links',
   assert.equal(ledger.availableAmount(next, 'advance'), 24000);
   assert.throws(() => ledger.setWorkAllocations(c, 'crm', [{ paymentId: 'advance', amount: 24000 }]), /не совпадают/);
 });
+
+test('legacy-compatible exports retain unresolved receipt review flags', () => {
+  const c = base(); c.payments[0].reviewStatus = 'legacy-uncertain';
+  const exported = ledger.exportCompatible(c);
+  delete exported.payments; delete exported.paymentAllocations;
+  const restored = ledger.normalize(exported);
+  assert.equal(restored.payments.filter(ledger.active).length, 0);
+  assert.equal(restored.works[1].creditedAmount, 0);
+});

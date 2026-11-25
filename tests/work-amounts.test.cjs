@@ -349,3 +349,19 @@ test('receipt date and time use one input and the legacy duplicate amount input 
   app.saveWorkFromForm(form);
   assert.equal(app.state.db.works[0].paymentDate, '2026-11-11T13:45:16+03:00');
 });
+
+test('saving a work cannot create a receipt and retains client requisites and uploaded files', () => {
+  const app = loadApp();
+  const client = { _id: 'cccccccccccccccccccccccc', name: 'Buyer', inn: '1234567890', kpp: '123456789', ogrn: '1234567890123',
+    bankAccount: '123', bankName: 'Bank', address: 'Office', signer: 'Director', customRequisite: { nested: 'retained' }, files: ['file'] };
+  app.state.db = app.dbFromCollections({ clients: [client], works: [], organizations: [],
+    'uploads.files': [{ _id: 'file', filename: 'card.docx' }], 'uploads.chunks': [{ _id: 'chunk', files_id: 'file', data: 'abc' }] });
+  const before = JSON.parse(JSON.stringify(app.state.db.clients));
+  const { form } = makeForm(); form.creditedAmount.value = '99999';
+  app.saveWorkFromForm(form);
+  assert.equal(app.state.db.payments.length, 0);
+  assert.equal(app.state.db.works[0].creditedAmount, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(app.state.db.clients)), before);
+  assert.equal(app.state.db.uploadsFiles[0].filename, 'card.docx');
+  assert.equal(app.state.db.uploadsChunks[0].data, 'abc');
+});
