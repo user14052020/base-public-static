@@ -13,7 +13,7 @@ const base = () => ({ collections: {
   clients: [{ _id: 'client', inn: '0012345678', name: 'Client', bankAccount: '00000000000000000001', customField: 'keep' }],
   organizations: [{ _id: 'org', inn: '123456789012', bankAccount: '00000000000000000002', name: 'Seller' }],
   works: [
-    { _id: 'w1', invoiceNumber: '1', invoiceDate: '2026-01-01', amount: 50000, creditedAmount: 25000, updAmount: 100000, clientId: 'client', executorOrganizationId: 'org', isPayed: false },
+    { _id: 'w1', invoiceNumber: '1', invoiceDate: '2026-01-01', amount: 50000, creditedAmount: 0, updAmount: 100000, clientId: 'client', executorOrganizationId: 'org', isPayed: false },
     { _id: 'w2', invoiceNumber: '2', invoiceDate: '2026-01-01', amount: 25000, clientId: 'client', executorOrganizationId: 'org', isPayed: false },
     { _id: 'old', invoiceNumber: '1', invoiceDate: '2025-01-01', amount: 50000, clientId: 'client', executorOrganizationId: 'org', isPayed: true },
     { _id: 'kwork', source: 'kwork', invoiceNumber: '', amount: 25000, clientId: 'client', executorOrganizationId: 'org', isPayed: true }

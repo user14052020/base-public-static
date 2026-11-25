@@ -18,6 +18,18 @@
 * {
   box-sizing: border-box;
 }
+[hidden] { display:none !important; }
+.work-money { min-width:145px; white-space:nowrap; }
+.work-money div + div { margin-top:4px; }
+.work-balance { display:block; margin-top:8px; white-space:nowrap; }
+.work-payment-history { margin-top:6px; min-width:160px; font-size:12px; }
+.work-payment-history summary { cursor:pointer; }
+.work-payment-history div { padding-top:6px; white-space:nowrap; }
+.payment-allocation-row { display:grid; grid-template-columns:minmax(220px,1fr) 160px 120px auto; align-items:end; gap:10px; }
+.payment-allocation-row label, .payment-allocation-row select { min-width:0; }
+.payment-client-filter { max-width:420px; }
+.payment-journal { min-width:1150px; }
+.payment-review { color:var(--danger); }
 
 body {
   margin: 0;
@@ -390,4 +402,5 @@ th {
   .work-item-row {
     grid-template-columns: 1fr;
   }
+  .payment-allocation-row { grid-template-columns:1fr; }
 }

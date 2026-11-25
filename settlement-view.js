@@ -9,7 +9,7 @@
       number: '', date: today, contract: '', manualOpening: false, openingAmount: '0', openingSide: 'organization', mirror: false };
     const build = (clientId, manual = false) => {
       if (manual && state.manualOpening && (!String(state.openingAmount).trim() || !Number.isFinite(Number(state.openingAmount)) || Number(state.openingAmount) < 0)) throw new Error('Укажите неотрицательную сумму начального сальдо');
-      return settlement.buildStatement({ works: deps.getDb().works,
+      return settlement.buildStatement({ works: deps.getDb().works, payments: deps.getDb().payments, paymentAllocations: deps.getDb().paymentAllocations,
         organizationId: state.organizationId, clientId, dateFrom: state.dateFrom, dateTo: state.dateTo,
         openingBalance: manual && state.manualOpening ? (state.openingSide === 'organization' ? 1 : -1) * Number(state.openingAmount) : null });
     };
@@ -37,7 +37,7 @@
         return `${metrics([['Сальдо на начало', formatMoney(report.openingBalance)], ['Сумма УПД', formatMoney(report.totalUpd)], ['Поступило платежей', formatMoney(report.totalPaid)], ['Сальдо на конец', formatMoney(report.closingBalance)]])}
           <p class="settlement-balance" role="status">${html(balanceText(report.closingBalance, report.warnings.length > 0))}</p>
           ${report.excludedKwork ? `<p class="muted">Работ Kwork без УПД: ${report.excludedKwork}. В сверку по документам не включены.</p>` : ''}
-          ${report.warnings.length ? `<section class="settlement-warnings"><h3>Замечания к данным</h3><ul>${report.warnings.map((warning) => `<li>${html(warning.message)} <button class="secondary" data-action="edit-work" data-id="${html(warning.workId)}">Исправить</button></li>`).join('')}</ul></section>` : ''}
+          ${report.warnings.length ? `<section class="settlement-warnings"><h3>Замечания к данным</h3><ul>${report.warnings.map((warning) => `<li>${html(warning.message)} <button class="secondary" data-action="${warning.paymentId ? 'edit-payment' : 'edit-work'}" data-id="${html(warning.paymentId || warning.workId)}">Исправить</button></li>`).join('')}</ul></section>` : ''}
           <div class="row"><button data-action="print-settlement" ${report.warnings.length ? 'disabled' : ''}>Скачать акт сверки PDF</button></div>
           <div class="table-wrap"><table class="settlement-table"><thead><tr><th>Дата</th><th>Документ</th><th>УПД / дебет</th><th>Платеж / кредит</th><th>Сальдо</th></tr></thead>
             <tbody><tr><td></td><td>Сальдо начальное</td><td></td><td></td><td class="numeric">${formatMoney(report.openingBalance)}</td></tr>

@@ -6,6 +6,7 @@ const { resolve } = require('node:path');
 const { gzipSync } = require('node:zlib');
 const XLSX = require('../../xlsx.full.min.js');
 const core = require('../../bank-reconciliation.js');
+const ledger = require('../../payment-ledger.js');
 const { readBackup } = require('../publish-backup.cjs');
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const parseBankWorkbook = (buffer, collections, organizationId) => {
@@ -27,7 +28,7 @@ const applyReconciliation = ({ backupPath, bankPath, organizationId, backupHash,
   const temporary = `${resolve(outputPath)}.payments-${process.pid}.tmp`;
   let created = false;
   try {
-    const json = Buffer.from(JSON.stringify(result.payload));
+    const json = Buffer.from(JSON.stringify({ ...result.payload, collections: ledger.exportCompatible(result.payload.collections) }));
     writeFileSync(temporary, outputPath.toLowerCase().endsWith('.gz') ? gzipSync(json) : json, { flag: 'wx', mode: 0o600 });
     created = true;
     renameSync(temporary, outputPath);

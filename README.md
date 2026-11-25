@@ -13,9 +13,9 @@ Every document work contributes its UPD amount, with the work total as the autom
 UPD amount to zero for advance-only invoices that must not accrue a second delivery. Kwork entries do
 not issue UPD and are excluded from this document-based reconciliation.
 
-Bank payment history is used once, with split allocations consolidated. Manual payments use their
-receipt dates. Undated paid works and inconsistent payment totals are flagged instead of assigning
-invented receipt dates; PDF output is blocked until these issues are corrected. Opening balance is
+The payment journal is the single source of receipts. Each receipt is counted once, independently
+of its work allocations. Unallocated client advances are included too. Undated receipts and ambiguous
+legacy payment fields are flagged for review; PDF output is blocked until these issues are corrected. Opening balance is
 calculated from earlier operations and can be overridden for incomplete historical records.
 
 The printable statement follows the supplied two-sided reconciliation layout with page carry-forwards,
@@ -24,11 +24,20 @@ user explicitly chooses to fill them. Reports do not change income totals or the
 
 ## Bank Payments
 
-On the Payments page, select an organization and a bank Excel export. Operations (`Events.xlsx`)
+The Payments page supports creating, editing, deleting, and allocating receipt cards. A payment can
+cover several works; a work can use several payments. Allocation totals cannot exceed the receipt,
+and client, organization and currency must agree. An advance can be saved without any invoice.
+Work cards select existing receipts only and cannot create a payment by changing a cached total.
+Order cost, invoice amount and UPD amount are independent. Paid status uses allocated receipts
+against order cost; income reports count actual receipts on their receipt dates, not invoice totals.
+
+For bank imports, select an organization and a bank Excel export. Operations (`Events.xlsx`)
 and Payment Orders exports are supported. Review the proposed matches, select invoices for uncertain
-payments, and split payments between invoices when necessary. Apply the checked allocations to the current
+payments, and split payments between invoices when necessary. Automatic splitting is proposed only
+for an unambiguous combination of outstanding amounts; uncertain matches remain unchecked. To register
+an unallocated advance, select its client and leave the invoice empty. Apply the checked receipts to the current
 browser database. Outgoing/rejected/own-account transfers and duplicate receipts are not imported.
-The single `creditedAmount` field is displayed as Payment Amount. Kwork works are fully paid despite
+Work receipt totals and latest dates are derived from journal allocations. Kwork works are fully paid despite
 commission deductions. Receipt times are retained when supplied; date-only sources remain date-only.
 
 ## Publish From the Browser
@@ -48,6 +57,9 @@ explicitly confirmed. A change after the preflight check always requires a fresh
 Browser edits are local until publication. Published data can be loaded manually on the Backups page;
 it never silently replaces potentially newer local edits. Backups remain available in both directions
 with the main application. The optional command-line publisher is documented in `scripts/README.md`.
+Backups contain canonical `payments` and `paymentAllocations` collections plus derived legacy work
+payment history. Old backups migrate once without treating edited cached totals as new bank receipts.
+Conditional data corrections travel inside the encrypted backup and do not overwrite unrelated local edits.
 
 ## Tests
 

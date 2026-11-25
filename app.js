@@ -1,6 +1,6 @@
 (() => {
   const DB_KEY = 'offers-base-static-db-v1';
-  const SESSION_KEY = 'offers-base-static-session-v1';
+  const SESSION_KEY = 'offers-base-static-session-v2';
   const ADMIN = {
     username: 'admin',
     salt: 'snwdPP34s/2j99J7Sm3VkA==',
@@ -8,7 +8,8 @@
     iterations: 250000
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
-  const { normalizeUpdAmount, getUpdAmount, getUpdItems } = window.OffersWorkAmounts;
+  const { normalizeUpdAmount, getOrderAmount, getInvoiceAmount, getUpdAmount, getUpdItems, getInvoiceItems, getOrderItems } = window.OffersWorkAmounts;
+  const ledger = window.OffersPaymentLedger;
   const { paymentDate, paymentTime, paymentDateTime, normalizePaymentFields, isFullyPaid } = window.OffersWorkPayments;
   const paymentDateText = (value) => {
     const date = paymentDate(value);
@@ -167,6 +168,8 @@
       clientId: idOf(work.clientId),
       items,
       amount,
+      orderAmount: normalizeUpdAmount(work.orderAmount),
+      invoiceAmount: normalizeUpdAmount(work.invoiceAmount),
       updAmount: normalizeUpdAmount(work.updAmount),
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
       paymentDate: paymentDateTime(work.paymentDate),
@@ -199,19 +202,31 @@
     registrationDetails: normalizeText(organization.registrationDetails) || DEFAULT_IP_REGISTRATION_DETAILS
   });
 
-  const dbFromCollections = (collections, meta = {}) => ({
+  const collectionsFromDb = (db) => ({
+    organizations: db.organizations || [], clients: db.clients || [], works: db.works || [], files: db.files || [],
+    sequences: db.sequences || [], users: db.users || [], 'uploads.files': db.uploadsFiles || [], 'uploads.chunks': db.uploadsChunks || [],
+    ...(Object.hasOwn(db, 'payments') ? { payments: db.payments } : {}), ...(Object.hasOwn(db, 'paymentAllocations') ? { paymentAllocations: db.paymentAllocations } : {})
+  });
+  const dbFromCollections = (source, meta = {}) => {
+    const collections = ledger.normalize({ ...source,
+      organizations: (source.organizations || []).map(normalizeOrganization), clients: (source.clients || []).map(normalizeClient), works: (source.works || []).map(normalizeWork) });
+    return {
     meta: {
       ...meta
     },
     organizations: (collections.organizations || []).map(normalizeOrganization),
     clients: (collections.clients || []).map(normalizeClient),
     works: (collections.works || []).map(normalizeWork),
+    payments: collections.payments,
+    paymentAllocations: collections.paymentAllocations,
     sequences: collections.sequences || [],
     users: collections.users || [],
     files: collections.files || [],
     uploadsFiles: collections['uploads.files'] || [],
     uploadsChunks: collections['uploads.chunks'] || []
-  });
+    };
+  };
+  const replaceCollections = (collections) => { state.db = dbFromCollections(collections, state.db.meta); };
 
   const decryptSeed = async (password) => {
     const encrypted = window.__OFFERS_SEED_ENCRYPTED__;
@@ -223,6 +238,7 @@
     const seed = reviveMongo(await decryptSeed(password));
     const collections = seed.collections || {};
     return dbFromCollections(collections, {
+      ...seed.meta,
       createdAt: new Date().toISOString(), source: 'seed', seedRevision: window.__OFFERS_SEED_ENCRYPTED__?.revision || null
     });
   };
@@ -232,25 +248,29 @@
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        const normalized = {
-          ...parsed,
-          organizations: (parsed.organizations || []).map(normalizeOrganization),
-          clients: (parsed.clients || []).map(normalizeClient),
-          works: (parsed.works || []).map(normalizeWork)
-        };
+        const normalized = dbFromCollections(collectionsFromDb(parsed), parsed.meta);
         if (normalized.meta?.pendingPublication?.revision === window.__OFFERS_SEED_ENCRYPTED__?.revision) normalized.meta.pendingPublication = null;
         localStorage.setItem(DB_KEY, JSON.stringify(normalized));
         return normalized;
-      } catch {
-        localStorage.removeItem(DB_KEY);
+      } catch (error) {
+        state.message = { text: `Локальная база не изменена: ${error.message}`, type: 'error' };
       }
     }
     return null;
   };
 
   const loadDb = async (password) => {
-    const stored = loadStoredDb();
-    if (stored) return stored;
+    const seed = reviveMongo(await decryptSeed(password));
+    const raw = localStorage.getItem(DB_KEY);
+    if (raw) {
+      const stored = JSON.parse(raw);
+      const revisions = [...new Map([...(stored.meta?.dataRevisions || []), ...(seed.meta?.dataRevisions || [])].map((revision) => [revision.id, revision])).values()];
+      const revised = window.OffersDataRevisions.apply({ collections: collectionsFromDb(stored), meta: stored.meta }, revisions);
+      const db = dbFromCollections(revised.collections, revised.meta);
+      saveDb(db, { markChanged: false });
+      if (db.meta.dataRevisionConflicts?.length) state.message = { text: 'Локальные изменения отличаются от опубликованного исправления. Проверьте журнал платежей.', type: 'error' };
+      return db;
+    }
     const seeded = await seedDb(password);
     saveDb(seeded, { markChanged: false });
     return seeded;
@@ -335,7 +355,10 @@
     if (!form) return;
     const amount = workFormAmount(form);
     form.querySelector('[data-work-total]').value = formatMoney(amount);
-    if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount }));
+    if (form.orderAmount?.dataset.auto === 'true') form.orderAmount.value = String(amount);
+    if (form.invoiceAmount?.dataset.auto === 'true') form.invoiceAmount.value = String(amount);
+    if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount, orderAmount: form.orderAmount?.value }));
+    updateWorkPaymentTotals(form);
   };
   const getOrganization = (id) => state.db.organizations.find((item) => item._id === id);
   const getClient = (id) => state.db.clients.find((item) => item._id === id);
@@ -653,6 +676,7 @@
 </html>`;
   };
   const invoiceDocument = (work, organization, client) => {
+    work = { ...work, items: getInvoiceItems(work), amount: getInvoiceAmount(work) };
     const total = totalWorkAmount(work.items);
     const signer = signerName(organization);
     const accountant = organization.chiefAccountant || '';
@@ -700,6 +724,7 @@
     );
   };
   const actDocument = (work, organization, client) => {
+    work = { ...work, items: getOrderItems(work), amount: getOrderAmount(work) };
     const total = totalWorkAmount(work.items);
     const totalQuantity = work.items.reduce((sum, item) => sum + toNumber(item.quantity, 0), 0);
     const executorSigner = signerName(organization);
@@ -710,7 +735,7 @@
         <h1 class="act-title">Акт выполненных работ (оказанных услуг) № ${html(work.actNumber || '-')} от ${displayDate(work.actDate)} г.</h1>
         <p class="labeled"><b>Исполнитель:</b> ${html(partyLine(organization))}</p>
         <p class="labeled"><b>Заказчик:</b> ${html(partyLine(client))}</p>
-        <p class="labeled"><b>Договор:</b> ${html(client.contract || '-')}</p>
+        <p class="labeled"><b>Договор:</b> ${html(work.contract || client.contract || '-')}</p>
         <table class="work-table" style="margin-top:7mm">
           <colgroup><col><col style="width:32mm"><col style="width:30mm"><col style="width:31mm"></colgroup>
           <thead><tr><th>Наименование услуги</th><th>Количество</th><th>Цена</th><th>Сумма</th></tr></thead>
@@ -976,6 +1001,7 @@
         <form class="login-card stack" data-form="login">
           <div>
             <h1>Offers Base</h1>
+          ${state.message ? `<p class="message ${state.message.type}" role="alert">${html(state.message.text)}</p>` : ''}
           <p class="muted">Статичная версия учета на GitHub Pages. Стартовые данные зашифрованы паролем.</p>
           </div>
           <label>Логин<input name="username" autocomplete="username" value="admin" /></label>
@@ -985,6 +1011,27 @@
         </form>
       </div>
     `;
+  };
+
+  const workPaymentHistory = (work) => {
+    if (work.source === 'kwork') return '';
+    const entries = ledger.workPayments(state.db, work._id);
+    return entries.length ? `<details class="work-payment-history"><summary>Платежей: ${entries.length}</summary>${entries.map((entry) => `<div>${html(paymentDateText(entry.payment.date) || 'Без даты')} · ${formatMoney(entry.amount)}</div>`).join('')}</details>` : '';
+  };
+  const workPaymentOptions = (clientId, organizationId, workId, selected = '') => `<option value="">Выберите платеж</option>${state.db.payments.filter((payment) => payment.clientId === clientId && payment.organizationId === organizationId
+    && (ledger.availableAmount(state.db, payment._id, workId) > 0 || payment._id === selected)).map((payment) => `<option value="${html(payment._id)}" ${payment._id === selected ? 'selected' : ''}>${html(`${paymentDateText(payment.date) || 'Без даты'} · № ${payment.documentNumber || '—'} · ${formatMoney(payment.amount)} · доступно ${formatMoney(ledger.availableAmount(state.db, payment._id, workId))}`)}</option>`).join('')}`;
+  const workPaymentRow = (entry, work) => `<div class="payment-allocation-row" data-work-payment-row>
+    <label>Платеж<select name="linkedPaymentId">${workPaymentOptions(work.clientId, work.executorOrganizationId, work._id, entry.paymentId)}</select></label>
+    <label>Сумма привязки<input name="linkedPaymentAmount" type="number" min="0.01" step="0.01" value="${html(entry.amount ?? '')}" /></label>
+    <label>Назначение<select name="linkedPaymentKind"><option value="payment">Оплата</option><option value="advance" ${entry.kind === 'advance' ? 'selected' : ''}>Аванс</option></select></label>
+    <button type="button" class="danger" data-action="remove-work-payment">Отвязать</button></div>`;
+  const updateWorkPaymentTotals = (form) => {
+    if (!form?.querySelectorAll) return;
+    const entries = [...form.querySelectorAll('[data-work-payment-row]')];
+    const total = entries.reduce((sum, row) => sum + toNumber(row.querySelector('[name="linkedPaymentAmount"]')?.value, 0), 0);
+    const received = form.querySelector('[data-work-received]'); const balance = form.querySelector('[data-work-balance]');
+    if (received) received.value = formatMoney(total);
+    if (balance) balance.value = formatMoney((normalizeUpdAmount(form.orderAmount?.value) ?? workFormAmount(form)) - total);
   };
 
   const renderWorks = () => {
@@ -1038,10 +1085,10 @@
                   <td>${html(clientName(work.clientId))}</td>
                   <td>${documentsCell(work)}</td>
                   <td><span class="badge ${work.source === 'kwork' ? 'source-kwork' : 'source-document'}">${work.source === 'kwork' ? 'Kwork' : 'Счет/акт'}</span></td>
-                  <td>${formatMoney(work.amount)} ${html(work.currency || 'RUB')}</td>
+                  <td class="work-money"><div>Заказ: ${formatMoney(getOrderAmount(work))}</div><div>Счет: ${formatMoney(getInvoiceAmount(work))}</div><div>УПД: ${formatMoney(getUpdAmount(work))}</div><small>${html(work.currency || 'RUB')}</small></td>
                   <td>${formatMoney(work.creditedAmount)} ${html(work.currency || 'RUB')}</td>
-                  <td>${html(paymentDateText(work.paymentDate) || '—')}</td>
-                  <td><label class="switch"><input type="checkbox" data-action="toggle-paid" data-id="${html(work._id)}" ${work.isPayed ? 'checked' : ''} ${work.source === 'kwork' ? 'disabled' : ''}/> ${work.isPayed ? 'Да' : work.source !== 'kwork' && work.creditedAmount > 0 && work.creditedAmount < work.amount ? 'Частично' : 'Нет'}</label></td>
+                  <td>${html(paymentDateText(work.paymentDate) || '—')}${workPaymentHistory(work)}</td>
+                  <td><label class="switch" title="Статус рассчитывается по привязанным платежам"><input type="checkbox" disabled ${work.isPayed ? 'checked' : ''}/> ${work.isPayed ? 'Да' : work.creditedAmount > 0 ? 'Частично' : 'Нет'}</label><small class="work-balance">Остаток: ${formatMoney(work.source === 'kwork' ? 0 : getOrderAmount(work) - work.creditedAmount)}</small></td>
                   <td>
                     <div class="row">
                       <button class="secondary" data-action="edit-work" data-id="${html(work._id)}">Редактировать</button>
@@ -1072,6 +1119,8 @@
     _id: '',
     items: [{ name: '', quantity: 1, price: 0 }],
     creditedAmount: 0,
+    orderAmount: null,
+    invoiceAmount: null,
     updAmount: null,
     paymentDate: null,
     isPayed: false,
@@ -1115,11 +1164,20 @@
             </select></label>
             <label>Номер акта<input name="actNumber" value="${html(work.actNumber)}" /></label>
             <label>Номер счета<input name="invoiceNumber" value="${html(work.invoiceNumber)}" /></label>
-            <label>Сумма документа<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
+            <label>Сумма позиций<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
+            <label>Стоимость заказа<input name="orderAmount" type="number" min="0" step="0.01" data-auto="${work.orderAmount == null}" value="${html(getOrderAmount(work))}" /></label>
+            <label>Сумма счета<input name="invoiceAmount" type="number" min="0" step="0.01" data-auto="${work.invoiceAmount == null}" value="${html(getInvoiceAmount(work))}" /></label>
             <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
-            <label>Сумма платежа<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount ?? work.amount ?? 0)}" /></label>
-            <label>Дата платежа<input name="paymentDate" placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(work.paymentDate))}" /></label>
-            <label>Оплата<span class="switch"><input name="isPayed" type="checkbox" ${work.isPayed ? 'checked' : ''} ${work.source === 'kwork' ? 'disabled' : ''}/> Оплачено</span></label>
+            <label>Договор / заказ<input name="workContract" value="${html(work.contract || '')}" /></label>
+          </div>
+          <div data-work-kwork-payments ${work.source === 'kwork' ? '' : 'hidden'} class="grid two">
+            <label>Сумма платежа Kwork<input name="creditedAmount" type="number" min="0" step="0.01" value="${html(work.creditedAmount ?? 0)}" /></label>
+            <label>Дата операции Kwork<input name="paymentDate" placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(work.paymentDate))}" /></label>
+          </div>
+          <div data-work-direct-payments ${work.source !== 'kwork' ? '' : 'hidden'} class="stack">
+            <div class="grid two"><label>Получено по платежам<input data-work-received readonly value="${html(formatMoney(work.creditedAmount || 0))}" /></label><label>Осталось по заказу<input data-work-balance readonly value="${html(formatMoney(getOrderAmount(work) - (work.creditedAmount || 0)))}" /></label></div>
+            <div class="row between"><h3>Привязанные платежи</h3><button type="button" class="secondary" data-action="add-work-payment">Выбрать платеж</button></div>
+            <div class="stack" data-work-payment-rows>${(work._id ? ledger.workPayments(state.db, work._id) : []).map((entry) => workPaymentRow(entry, work)).join('')}</div>
           </div>
           <div class="stack">
             <div class="row between">
@@ -1168,6 +1226,11 @@
     const year = documentDate.getFullYear();
     const source = form.source.value === 'kwork' ? 'kwork' : 'document';
     const existingWork = state.db.works.find((work) => work._id === existingId);
+    if (source === 'kwork' && state.db.paymentAllocations.some((entry) => entry.workId === existingId)) throw new Error('Сначала снимите привязки платежей, прежде чем менять источник работы на Kwork');
+    for (const name of ['orderAmount', 'invoiceAmount', 'updAmount']) {
+      const input = form[name];
+      if (input && input.dataset.auto !== 'true' && normalizeUpdAmount(input.value) === null) throw new Error('Суммы заказа, счета и УПД должны быть неотрицательными числами');
+    }
     const enteredPaymentDate = form.paymentDate.value.trim();
     if (enteredPaymentDate && !paymentDateTime(enteredPaymentDate)) throw new Error('Укажите дату платежа в формате ДД.ММ.ГГГГ, при наличии времени — ДД.ММ.ГГГГ ЧЧ:ММ:СС');
     const payload = normalizeWork({
@@ -1175,10 +1238,13 @@
       _id: existingId || uid(),
       items,
       amount,
+      orderAmount: !form.orderAmount || form.orderAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.orderAmount.value),
+      invoiceAmount: !form.invoiceAmount || form.invoiceAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.invoiceAmount.value),
+      contract: normalizeText(form.workContract?.value || ''),
       updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
       paymentDate: paymentDateTime(enteredPaymentDate),
       creditedAmount: form.creditedAmount.value === '' ? amount : toNumber(form.creditedAmount.value, amount),
-      isPayed: form.isPayed.checked,
+      isPayed: source === 'kwork',
       currency: 'RUB',
       source,
       sourceName: source === 'kwork' ? 'Kwork' : 'Счет/акт',
@@ -1191,9 +1257,11 @@
       actDate: documentDate.toISOString(),
       invoiceDate: documentDate.toISOString()
     });
-    const index = state.db.works.findIndex((work) => work._id === payload._id);
-    if (index >= 0) state.db.works[index] = payload;
-    else state.db.works.push(payload);
+    const collections = { ...state.db, works: [...state.db.works.filter((work) => work._id !== payload._id), payload] };
+    const entries = source === 'kwork' ? [] : [...form.querySelectorAll('[data-work-payment-row]')].map((row) => ({
+      paymentId: row.querySelector('[name="linkedPaymentId"]').value, amount: row.querySelector('[name="linkedPaymentAmount"]').value, kind: row.querySelector('[name="linkedPaymentKind"]').value
+    })).filter((entry) => entry.paymentId || entry.amount);
+    replaceCollections(ledger.setWorkAllocations(collections, payload._id, entries));
     saveDb();
     state.editingWorkId = null;
     showMessage('Работа сохранена');
@@ -1334,64 +1402,7 @@
     showMessage('Клиент сохранен');
   };
 
-  const aggregateReport = () => {
-    const months = new Map();
-    const summary = { totalWorks: 0, paidWorksCount: 0, totalAmount: 0, totalCreditedAmount: 0, totalCommission: 0 };
-    for (const work of state.db.works) {
-      if (state.paidOnly && !work.isPayed) continue;
-      const date = workDate(work);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const rowKey = `${monthKey}|${work.source}|${work.clientId}`;
-      if (!months.has(monthKey)) {
-        months.set(monthKey, {
-          monthKey,
-          label: monthLabel.format(new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1))).replace(/\s?г\.$/, ''),
-          totalWorks: 0,
-          paidWorksCount: 0,
-          totalAmount: 0,
-          totalCreditedAmount: 0,
-          totalCommission: 0,
-          rows: new Map()
-        });
-      }
-      const month = months.get(monthKey);
-      if (!month.rows.has(rowKey)) {
-        month.rows.set(rowKey, {
-          source: work.source,
-          clientName: clientName(work.clientId),
-          worksCount: 0,
-          paidWorksCount: 0,
-          totalAmount: 0,
-          totalCreditedAmount: 0,
-          totalCommission: 0
-        });
-      }
-      const row = month.rows.get(rowKey);
-      const count = work.items.length || 1;
-      const commission = (work.platformCommission || 0) + (work.payoutCommission || 0);
-      row.worksCount += count;
-      row.paidWorksCount += work.isPayed ? count : 0;
-      row.totalAmount += work.amount;
-      row.totalCreditedAmount += work.creditedAmount;
-      row.totalCommission += commission;
-      month.totalWorks += count;
-      month.paidWorksCount += work.isPayed ? count : 0;
-      month.totalAmount += work.amount;
-      month.totalCreditedAmount += work.creditedAmount;
-      month.totalCommission += commission;
-      summary.totalWorks += count;
-      summary.paidWorksCount += work.isPayed ? count : 0;
-      summary.totalAmount += work.amount;
-      summary.totalCreditedAmount += work.creditedAmount;
-      summary.totalCommission += commission;
-    }
-    return {
-      summary,
-      months: [...months.values()]
-        .sort((left, right) => right.monthKey.localeCompare(left.monthKey))
-        .map((month) => ({ ...month, rows: [...month.rows.values()].sort((a, b) => b.totalAmount - a.totalAmount) }))
-    };
-  };
+  const aggregateReport = () => window.OffersIncomeReport.aggregate(state.db, state.paidOnly);
 
   const renderReport = () => {
     const report = aggregateReport();
@@ -1402,7 +1413,7 @@
             <h2>Отчет</h2>
             <p class="muted">Книга доходов по работам в локальной базе браузера.</p>
           </div>
-          <label class="switch"><input type="checkbox" data-action="toggle-report-paid" ${state.paidOnly ? 'checked' : ''}/> Только оплаченные</label>
+          <label class="switch"><input type="checkbox" data-action="toggle-report-paid" ${state.paidOnly ? 'checked' : ''}/> Работы: только оплаченные</label>
         </div>
         <div class="totals">
           ${metric('Записей', report.summary.totalWorks)}
@@ -1478,22 +1489,27 @@
   };
 
   const backupPayload = () => {
-    const collections = {
+    const collections = ledger.exportCompatible({
       clients: state.db.clients,
       files: state.db.files || [],
       organizations: state.db.organizations,
       sequences: state.db.sequences || [],
       users: state.db.users || [],
       works: state.db.works,
+      payments: state.db.payments,
+      paymentAllocations: state.db.paymentAllocations,
       'uploads.chunks': state.db.uploadsChunks || [],
       'uploads.files': state.db.uploadsFiles || []
-    };
-    const collectionNames = ['clients', 'files', 'organizations', 'sequences', 'users', 'works', 'uploads.chunks', 'uploads.files'];
+    });
+    const collectionNames = ['clients', 'files', 'organizations', 'sequences', 'users', 'works', 'payments', 'paymentAllocations', 'uploads.chunks', 'uploads.files'];
 
     return {
       meta: {
         createdAt: new Date().toISOString(),
         database: 'offers-base-static',
+        schemaVersion: 2,
+        dataRevisions: state.db.meta?.dataRevisions || [],
+        appliedDataRevisions: state.db.meta?.appliedDataRevisions || [],
         collections: collectionNames
       },
       collections: Object.fromEntries(
@@ -1539,8 +1555,9 @@
   const restoreBackup = async (file) => {
     const text = await readBackupFile(file);
     const payload = reviveMongo(JSON.parse(text));
-    const collections = payload.collections || {};
-    state.db = dbFromCollections(collections, { restoredAt: new Date().toISOString() });
+    const revisions = [...new Map([...(state.db.meta?.dataRevisions || []), ...(payload.meta?.dataRevisions || [])].map((revision) => [revision.id, revision])).values()];
+    const revised = window.OffersDataRevisions.apply(payload, revisions);
+    state.db = dbFromCollections(revised.collections, { ...revised.meta, restoredAt: new Date().toISOString() });
     saveDb();
     showMessage('Бэкап восстановлен');
   };
@@ -1682,7 +1699,7 @@
     else if (state.view === 'report') renderReport();
     else if (state.view === 'settlement') app.innerHTML = shell(settlementView.render());
     else if (state.view === 'backup') renderBackup();
-    else if (state.view === 'payments') app.innerHTML = shell(browserFeatures.renderPayments());
+    else if (state.view === 'payments') app.innerHTML = shell(paymentView.render() + browserFeatures.renderPayments());
     else if (state.view === 'github') app.innerHTML = shell(browserFeatures.renderGithub());
     else renderWorks();
   };
@@ -1693,6 +1710,7 @@
     event.preventDefault();
     clearMessage();
     try {
+      if (paymentView.handleSubmit(form)) return;
       if (form.dataset.form === 'login') {
         if (normalizeText(form.username.value) !== ADMIN.username || !(await verifyPassword(form.password.value))) {
           throw new Error('Неверный логин или пароль');
@@ -1712,36 +1730,44 @@
 
   document.addEventListener('input', (event) => {
     const target = event.target;
+    if (paymentView.handleInput(target)) return;
     if (settlementView.handleInput(target)) return;
     if (browserFeatures.handleInput(target)) return;
     if (target.dataset.input === 'work-search') {
       state.query = target.value;
       updateWorkResults();
     }
-    if (target.name === 'updAmount') {
+    if (['updAmount', 'invoiceAmount', 'orderAmount'].includes(target.name)) {
       target.dataset.auto = target.value === '' ? 'true' : 'false';
       updateWorkTotals(target.closest('form'));
     }
     if (target.name === 'creditedAmount' || target.name === 'source') {
       const form = target.closest('form');
-      form.isPayed.disabled = form.source.value === 'kwork';
-      form.isPayed.checked = isFullyPaid({ amount: workFormAmount(form), source: form.source.value }, toNumber(form.creditedAmount.value, 0));
+      const isKwork = form.source.value === 'kwork';
+      form.querySelector('[data-work-kwork-payments]').hidden = !isKwork;
+      form.querySelector('[data-work-direct-payments]').hidden = isKwork;
     }
     if (target.name === 'itemName' || target.name === 'itemQuantity' || target.name === 'itemPrice') {
       const row = target.closest('[data-item-row]');
       if (row) updateWorkItemAmount(row);
       updateWorkTotals(target.closest('form'));
     }
+    if (target.name === 'linkedPaymentAmount') updateWorkPaymentTotals(target.closest('form'));
   });
 
   document.addEventListener('change', (event) => {
     const target = event.target;
+    if (paymentView.handleChange(target)) return;
     if (settlementView.handleChange(target)) return;
     if (browserFeatures.handleChange(target)) return;
     const filter = { 'work-client': 'clientId', 'work-date-from': 'dateFrom', 'work-date-to': 'dateTo' }[target.dataset.input];
     if (filter) {
       state.workFilters[filter] = target.value;
       updateWorkResults();
+    }
+    if (['clientId', 'executorOrganizationId'].includes(target.name)) {
+      const form = target.closest('form');
+      for (const input of form.querySelectorAll('[name="linkedPaymentId"]')) input.innerHTML = workPaymentOptions(form.clientId.value, form.executorOrganizationId.value, form._id.value, input.value);
     }
   });
 
@@ -1751,6 +1777,7 @@
     clearMessage();
     const action = target.dataset.action;
     try {
+      if (paymentView.handleAction(action, target)) return;
       if (settlementView.handleAction(action, target)) return;
       if (await browserFeatures.handleAction(action, target)) return;
       if (target.dataset.view) {
@@ -1780,21 +1807,18 @@
         renderWorks();
       }
       if (action === 'delete-work') {
-        if (confirm('Удалить работу?')) {
-          state.db.works = state.db.works.filter((work) => work._id !== target.dataset.id);
+        if (confirm('Удалить работу? Платежи останутся в журнале без привязки к этой работе.')) {
+          replaceCollections(ledger.removeWork(state.db, target.dataset.id));
           saveDb();
           renderWorks();
         }
       }
-      if (action === 'toggle-paid') {
-        const work = state.db.works.find((item) => item._id === target.dataset.id);
-        if (work && work.source !== 'kwork') {
-          if (target.checked) work.paymentDate ||= todayInput();
-          work.isPayed = target.checked;
-          saveDb();
-          renderWorks();
-        }
+      if (action === 'add-work-payment') {
+        const form = target.closest('form'); const row = document.createElement('div');
+        row.innerHTML = workPaymentRow({}, { _id: form._id.value, clientId: form.clientId.value, executorOrganizationId: form.executorOrganizationId.value });
+        form.querySelector('[data-work-payment-rows]').appendChild(row.firstElementChild);
       }
+      if (action === 'remove-work-payment') { const form = target.closest('form'); target.closest('[data-work-payment-row]').remove(); updateWorkPaymentTotals(form); }
       if (action === 'reset-search') {
         state.query = '';
         state.workFilters = { clientId: '', dateFrom: '', dateTo: '' };
@@ -1884,6 +1908,10 @@
   const settlementView = window.OffersSettlementView.create({
     html, formatMoney, displayDate, paymentDateText, document, amountToWords, personShortName, printableShell, sanitizeDocumentPart,
     today: todayInput, getDb: () => state.db, render, openDocument: openSettlementDocument
+  });
+  const paymentView = window.OffersPaymentView.create({
+    html, formatMoney, paymentDateText, document, uid, getDb: () => state.db, replaceCollections, saveDb, render,
+    confirm: (message) => confirm(message), message: showMessage, showView: () => { state.view = 'payments'; }
   });
   window.addEventListener?.('pagehide', () => { browserFeatures.clearSecrets(); state.password = null; });
 

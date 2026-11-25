@@ -11,7 +11,8 @@ const fixture = (publisher, document = { querySelector: () => null }, storedPref
   const storage = new Map(storedPreferences === undefined ? [] : [['offers-base-github-preferences-v1', storedPreferences]]); let saves = 0;
   const features = create({ publisher, html: (text) => String(text ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
     formatMoney: (value) => String(value), paymentDateText: (value) => value || '', storage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
-    getDb: () => db, exportPayload: () => structuredClone({ collections: { clients: db.clients, organizations: db.organizations, works: db.works } }),
+    getDb: () => db, exportPayload: () => structuredClone({ collections: { clients: db.clients, organizations: db.organizations, works: db.works,
+      ...(db.payments ? { payments: db.payments, paymentAllocations: db.paymentAllocations } : {}) } }),
     replacePayload: (payload, meta) => { db = { ...payload.collections, meta }; }, saveDb: () => { saves++; },
     render: () => {}, message: () => {}, confirm: () => true, getPassword: () => 'site-password',
     getSeed: () => seed, setSeed: (value) => { seed = value; }, document });

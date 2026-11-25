@@ -76,7 +76,7 @@ const loadApp = () => {
   const source = readFileSync(join(__dirname, '../app.js'), 'utf8');
   const listeners = {};
   const context = {
-    window: { OffersWorkAmounts: amounts, OffersWorkPayments: require('../work-payments.js'), OffersBrowserFeatures: require('../browser-features.js'), OffersSettlementView: require('../settlement-view.js'), location: { href: 'https://example.test/' } },
+    window: { OffersWorkAmounts: amounts, OffersWorkPayments: require('../work-payments.js'), OffersBrowserFeatures: require('../browser-features.js'), OffersSettlementView: require('../settlement-view.js'), OffersPaymentLedger: require('../payment-ledger.js'), OffersPaymentView: require('../payment-view.js'), OffersDataRevisions: require('../data-revisions.js'), OffersIncomeReport: require('../income-report.js'), location: { href: 'https://example.test/' } },
     document: { getElementById: () => ({}), addEventListener: (name, handler) => { listeners[name] = handler; } },
     sessionStorage: { getItem: () => null },
     localStorage: { setItem: () => {} },
@@ -282,11 +282,17 @@ const makeForm = () => {
     clientId: { value: 'cccccccccccccccccccccccc' },
     actNumber: { value: '' }, invoiceNumber: { value: '' },
     updAmount: { name: 'updAmount', value: '25000', dataset: { auto: 'true' } },
-    querySelectorAll: () => [row],
+    querySelectorAll: (selector) => selector === '[data-item-row]' ? [row] : [],
     querySelector: () => total
   };
   form.updAmount.closest = () => form;
   return { form, fields, total };
+};
+const linkPayment = (form, paymentId, amount) => {
+  const original = form.querySelectorAll;
+  const fields = { linkedPaymentId: { value: paymentId }, linkedPaymentAmount: { value: String(amount) }, linkedPaymentKind: { value: 'payment' } };
+  const row = { querySelector: (selector) => fields[/name="(.*?)"/.exec(selector)?.[1]] };
+  form.querySelectorAll = (selector) => selector === '[data-work-payment-row]' ? [row] : original(selector);
 };
 
 test('form tracks the total automatically until a manual edit, and clearing resets it', () => {
@@ -310,8 +316,9 @@ test('form tracks the total automatically until a manual edit, and clearing rese
 test('saving and reopening a work preserves UPD mode without changing accounting amounts', () => {
   for (const value of [null, 0, 50000]) {
     const app = loadApp();
-    app.state.db = app.dbFromCollections({});
+    app.state.db = app.dbFromCollections({ payments: [{ _id: 'existing-payment', clientId: 'cccccccccccccccccccccccc', organizationId: 'bbbbbbbbbbbbbbbbbbbbbbbb', date: '2026-11-11', amount: 25000, source: 'manual' }], paymentAllocations: [] });
     const { form } = makeForm();
+    linkPayment(form, 'existing-payment', 25000);
     form.updAmount.value = String(value ?? 25000);
     form.updAmount.dataset.auto = value === null ? 'true' : 'false';
     app.saveWorkFromForm(form);
@@ -337,6 +344,7 @@ test('receipt date and time use one input and the legacy duplicate amount input 
   assert.ok(markup.includes('11.11.2026 13:45:16+03:00'));
   const { form } = makeForm();
   form._id.value = work._id;
+  linkPayment(form, app.state.db.payments[0]._id, 25000);
   form.paymentDate.value = '11.11.2026 13:45:16+03:00';
   app.saveWorkFromForm(form);
   assert.equal(app.state.db.works[0].paymentDate, '2026-11-11T13:45:16+03:00');

@@ -52,7 +52,7 @@ test('unknown payment dates and inconsistent ledgers are explicit, never assigne
   const r = report([work({ creditedAmount: 50000, isPayed: true }),
     work({ _id: 'bad-ledger', creditedAmount: 100, bankPayments: [{ amount: 50, date: '2026-01-15' }] })]);
   assert.equal(r.totalPaid, 50);
-  assert.deepEqual(r.warnings.map((warning) => warning.code).sort(), ['PAYMENT_DATE', 'PAYMENT_TOTAL']);
+  assert.deepEqual(r.warnings.map((warning) => warning.code).sort(), ['PAYMENT_DATE', 'PAYMENT_REVIEW']);
   assert.equal(report([work({ creditedAmount: 50000 })]).warnings.length, 0);
 });
 

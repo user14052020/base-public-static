@@ -9,12 +9,13 @@
     return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) / 100 : null;
   };
 
-  const getUpdAmount = (work) => normalizeUpdAmount(work.updAmount) ?? normalizeUpdAmount(work.amount) ?? 0;
+  const getOrderAmount = (work) => normalizeUpdAmount(work.orderAmount) ?? normalizeUpdAmount(work.amount) ?? 0;
+  const getInvoiceAmount = (work) => normalizeUpdAmount(work.invoiceAmount) ?? normalizeUpdAmount(work.amount) ?? 0;
+  const getUpdAmount = (work) => normalizeUpdAmount(work.updAmount) ?? getOrderAmount(work);
 
-  const getUpdItems = (work) => {
+  const allocateItems = (work, target) => {
     const items = work.items || [];
     const total = items.reduce((sum, item) => sum + item.amount, 0);
-    const target = getUpdAmount(work);
     if (!items.length || target === total) return items;
 
     const targetCents = Math.round(target * 100);
@@ -32,5 +33,8 @@
     });
   };
 
-  return { normalizeUpdAmount, getUpdAmount, getUpdItems };
+  const getUpdItems = (work) => allocateItems(work, getUpdAmount(work));
+  const getInvoiceItems = (work) => allocateItems(work, getInvoiceAmount(work));
+  const getOrderItems = (work) => allocateItems(work, getOrderAmount(work));
+  return { normalizeUpdAmount, getOrderAmount, getInvoiceAmount, getUpdAmount, getUpdItems, getInvoiceItems, getOrderItems };
 });

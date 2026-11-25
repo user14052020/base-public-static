@@ -31,7 +31,7 @@
       const visible = bank.rows.filter((row) => bank.filter === 'all' || bank.filter === 'selected' && row.include
         || bank.filter === 'unmatched' && row.canSelect && (!row.workId || !row.include) || bank.filter === 'pending' && row.canSelect);
       return `<section class="browser-section stack">
-        <div class="row between"><h2>Платежи</h2><button class="secondary" data-action="export-backup">Скачать бекап</button></div>
+        <div class="row between"><h2>Импорт выписки</h2><button class="secondary" data-action="export-backup">Скачать бекап</button></div>
         <fieldset class="feature-controls stack" ${bank.busy ? 'disabled' : ''}>
           <div class="grid two">
             <label>Выписка банка<input type="file" accept=".xlsx,.xls" data-input="bank-file"/><span class="muted">${html(bank.file?.name || '')}</span></label>
@@ -39,7 +39,7 @@
           </div>
           <div class="row"><button data-action="bank-preview" ${!bank.file || !bank.organizationId ? 'disabled' : ''}>${bank.busy ? 'Обработка...' : 'Сопоставить'}</button>
             <button data-action="bank-apply" ${!selected.length ? 'disabled' : ''}>Применить платежи</button>
-            <span role="status" data-bank-summary>${bank.preview ? `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${selected.length}` : html(bank.lastResult)}</span>
+            <span role="status" data-bank-summary>${bank.preview ? `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${new Set(selected.map((row) => row.paymentId)).size}. Привязок: ${selected.length}` : html(bank.lastResult)}</span>
           </div>
         </fieldset>
       </section>
@@ -52,11 +52,11 @@
           <thead><tr><th>Выбор</th><th>Дата платежа</th><th>Сумма, ₽</th><th>Распределить, ₽</th><th>Плательщик</th><th>Счет</th><th>Результат</th><th>Назначение</th><th></th></tr></thead>
           <tbody>${visible.map((row) => `<tr data-bank-key="${row.key}">
             <td><input type="checkbox" data-bank-field="include" aria-label="Выбрать платеж" ${row.include ? 'checked' : ''} ${!row.canSelect ? 'disabled' : ''}/></td>
-            <td>${html(paymentDateText(row.date))}</td><td class="numeric">${formatMoney(row.amount)}</td>
-            <td><input class="bank-share" type="number" min="0.01" step="0.01" data-bank-field="allocationAmount" value="${html(row.allocationAmount)}" ${!row.canSelect ? 'disabled' : ''} aria-label="Сумма распределения"/></td>
-            <td>${html(row.payer)}${row.payerInn ? `<br><small class="muted">ИНН ${html(row.payerInn)}</small>` : ''}</td>
+            <td>${html(paymentDateText(row.date))}<br><small>№ ${html(row.documentNumber || '—')}</small></td><td class="numeric">${row.clone ? 'Часть платежа' : formatMoney(row.amount)}</td>
+            <td><input class="bank-share" type="number" min="0" step="0.01" data-bank-field="allocationAmount" value="${html(row.allocationAmount)}" ${!row.canSelect || !row.workId ? 'disabled' : ''} aria-label="Сумма распределения"/></td>
+            <td>${html(row.payer)}${row.payerInn ? `<br><small class="muted">ИНН ${html(row.payerInn)}</small>` : ''}<select data-bank-field="clientId" aria-label="Клиент платежа" ${!row.canSelect ? 'disabled' : ''}><option value="">Выберите клиента</option>${(bank.preview.clients || []).map((client) => `<option value="${html(reconciliation.id(client._id))}" ${reconciliation.id(client._id) === row.clientId ? 'selected' : ''}>${html(client.name)}</option>`).join('')}</select></td>
             <td><select class="bank-invoice" data-bank-field="workId" aria-label="Счет для платежа" ${!row.canSelect ? 'disabled' : ''}>
-              <option value="">Не привязан</option>${bank.preview.invoices.filter((invoice) => !(row.payerInn && invoice.clientInn && row.payerInn !== invoice.clientInn)).map((invoice) => `<option value="${html(invoice.id)}" ${invoice.id === row.workId ? 'selected' : ''}>${html(invoice.label)}</option>`).join('')}
+              <option value="">Аванс / без привязки</option>${bank.preview.invoices.filter((invoice) => !(row.payerInn && invoice.clientInn && row.payerInn !== invoice.clientInn)).map((invoice) => `<option value="${html(invoice.id)}" ${invoice.id === row.workId ? 'selected' : ''}>${html(invoice.label)}</option>`).join('')}
             </select></td><td>${html(row.reason)}</td><td class="bank-purpose">${html(row.purpose)}</td>
             <td><button class="secondary" data-action="bank-split" data-bank-key="${row.key}" title="Разделить платеж" aria-label="Разделить платеж" ${!row.canSelect ? 'disabled' : ''}>+</button>
               ${row.clone ? `<button class="danger" data-action="bank-remove" data-bank-key="${row.key}" title="Удалить распределение" aria-label="Удалить распределение">×</button>` : ''}</td>
@@ -99,7 +99,8 @@
         const payments = [];
         for (const { fingerprint, ...record } of records) payments.push({ ...record, paymentId: await codec.sha256(fingerprint) });
         bank.preview = reconciliation.preview({ collections: payload.collections, payments, organizationId: bank.organizationId });
-        bank.rows = bank.preview.rows.map((row) => ({ ...row, key: ++bank.sequence, clone: false }));
+        bank.rows = bank.preview.rows.flatMap((row) => (row.allocations?.length ? row.allocations : [{ workId: row.workId, amount: row.allocationAmount }])
+          .map((share, index) => ({ ...row, workId: share.workId, allocationAmount: share.amount, key: ++bank.sequence, clone: index > 0, autoMatch: row.include })));
         bank.baseHash = await codec.collectionsHash(payload);
         bank.lastResult = '';
       } finally { bank.busy = false; deps.render(); }
@@ -111,9 +112,9 @@
       const updatedAt = sourceDb.meta?.updatedAt;
       const current = deps.exportPayload();
       if (await codec.collectionsHash(current) !== bank.baseHash || deps.getDb() !== sourceDb || sourceDb.meta?.updatedAt !== updatedAt) throw new Error('База изменилась после сопоставления. Повторите сопоставление.');
-      const allocations = bank.rows.filter((row) => row.include).map((row) => ({ paymentId: row.paymentId, workId: row.workId, amount: row.allocationAmount }));
+      const allocations = bank.rows.filter((row) => row.include).map((row) => ({ paymentId: row.paymentId, workId: row.workId, clientId: row.clientId, amount: row.workId ? row.allocationAmount : 0 }));
       const result = reconciliation.apply({ payload: current, preview: bank.preview, allocations });
-      if (!deps.confirm(`Обновить ${result.updatedWorks} работ? Ручные суммы затронутых счетов будут заменены суммой связанных банковских платежей.`)) return;
+      if (!deps.confirm(`Учесть ${result.appliedPayments} платежей и обновить привязки к ${result.updatedWorks} работам?`)) return;
       deps.replacePayload(result.payload, { ...deps.getDb().meta });
       deps.saveDb();
       bank.preview = null; bank.rows = [];
@@ -177,13 +178,22 @@
         const field = target.dataset.bankField;
         if (field === 'include') row.include = target.checked;
         else if (field === 'allocationAmount') row.allocationAmount = target.value;
+        else if (field === 'clientId') row.clientId = target.value;
         else if (field === 'workId') {
-          row.workId = target.value; row.include = Boolean(target.value);
+          row.workId = target.value;
+          const invoice = bank.preview.invoices.find((invoice) => invoice.id === row.workId);
+          if (invoice) row.clientId = invoice.clientId;
+          row.allocationAmount = row.workId ? row.allocationAmount || row.availableAmount : 0;
+          row.include = Boolean(row.workId || row.clientId);
+          const amountInput = target.closest('tr')?.querySelector('[data-bank-field="allocationAmount"]');
+          if (amountInput) { amountInput.disabled = !row.workId; amountInput.value = row.allocationAmount; }
+          const clientInput = target.closest('tr')?.querySelector('[data-bank-field="clientId"]');
+          if (clientInput) clientInput.value = row.clientId;
           const checkbox = target.closest('tr')?.querySelector('[data-bank-field="include"]');
           if (checkbox) checkbox.checked = row.include;
         }
         const summary = deps.document?.querySelector('[data-bank-summary]');
-        if (summary) summary.textContent = `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${bank.rows.filter((item) => item.include).length}`;
+        if (summary) summary.textContent = `Строк: ${bank.preview.totalRows}. Входящих: ${bank.preview.incomingRows}. Доступно: ${bank.preview.availableRows}. Выбрано: ${new Set(bank.rows.filter((item) => item.include).map((item) => item.paymentId)).size}. Привязок: ${bank.rows.filter((item) => item.include).length}`;
         const applyButton = deps.document?.querySelector('[data-action="bank-apply"]');
         if (applyButton) applyButton.disabled = !bank.rows.some((item) => item.include);
         return true;
@@ -201,12 +211,12 @@
       if (action === 'bank-preview') { await createPreview(); return true; }
       if (action === 'bank-apply') { await applyPayments(); return true; }
       if (action === 'bank-select-matches' || action === 'bank-clear-selection') {
-        for (const row of bank.rows) row.include = action === 'bank-select-matches' && !row.clone && Boolean(bank.preview.rows.find((original) => original.paymentId === row.paymentId)?.include);
+        for (const row of bank.rows) row.include = action === 'bank-select-matches' && row.autoMatch && Boolean(row.workId);
         deps.render(); return true;
       }
       if (action === 'bank-split' || action === 'bank-remove') {
         const row = bank.rows.find((item) => item.key === Number(target.dataset.bankKey));
-        if (row?.canSelect && action === 'bank-split') bank.rows.splice(bank.rows.indexOf(row) + 1, 0, { ...row, key: ++bank.sequence, clone: true, include: false, workId: '', allocationAmount: '', reason: 'Часть платежа' });
+        if (row?.canSelect && action === 'bank-split') bank.rows.splice(bank.rows.indexOf(row) + 1, 0, { ...row, key: ++bank.sequence, clone: true, autoMatch: false, include: false, workId: '', allocationAmount: '', reason: 'Часть платежа' });
         if (row?.clone && action === 'bank-remove') bank.rows = bank.rows.filter((item) => item !== row);
         deps.render(); return true;
       }
