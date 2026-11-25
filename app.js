@@ -8,7 +8,7 @@
     iterations: 250000
   };
   const DEFAULT_IP_REGISTRATION_DETAILS = 'ОГРНИП 324665800143783, 02.07.2024 г.';
-  const { normalizeUpdAmount, getOrderAmount, getInvoiceAmount, getUpdAmount, getUpdItems, getInvoiceItems, getOrderItems } = window.OffersWorkAmounts;
+  const { normalizeUpdAmount, getOrderAmount, getInvoiceAmount, getUpdAmount, getUpdItems, getInvoiceItems, migrateInvoiceAmount } = window.OffersWorkAmounts;
   const ledger = window.OffersPaymentLedger;
   const { paymentDate, paymentTime, paymentDateTime, normalizePaymentFields } = window.OffersWorkPayments;
   const paymentDateText = (value) => {
@@ -155,8 +155,9 @@
 
   const normalizeWork = (work) => {
     work = normalizePaymentFields(work);
-    const items = Array.isArray(work.items) ? work.items.map(normalizeItem).filter((item) => item.name) : [];
-    const amount = items.reduce((sum, item) => sum + item.amount, 0);
+    const normalizedItems = Array.isArray(work.items) ? work.items.map(normalizeItem).filter((item) => item.name) : [];
+    work = migrateInvoiceAmount({ ...work, items: normalizedItems, amount: normalizedItems.reduce((sum, item) => sum + item.amount, 0) });
+    const { items, amount } = work;
     const actDate = parseDate(work.actDate) || parseDate(work.invoiceDate) || new Date();
     const invoiceDate = parseDate(work.invoiceDate) || actDate;
     const source = work.source === 'kwork' ? 'kwork' : 'document';
@@ -168,7 +169,6 @@
       items,
       amount,
       orderAmount: normalizeUpdAmount(work.orderAmount),
-      invoiceAmount: normalizeUpdAmount(work.invoiceAmount),
       updAmount: normalizeUpdAmount(work.updAmount),
       creditedAmount: Math.max(0, toNumber(work.creditedAmount, amount)),
       paymentDate: paymentDateTime(work.paymentDate),
@@ -355,7 +355,6 @@
     const amount = workFormAmount(form);
     form.querySelector('[data-work-total]').value = formatMoney(amount);
     if (form.orderAmount?.dataset.auto === 'true') form.orderAmount.value = String(amount);
-    if (form.invoiceAmount?.dataset.auto === 'true') form.invoiceAmount.value = String(amount);
     if (form.updAmount.dataset.auto === 'true') form.updAmount.value = String(getUpdAmount({ amount, orderAmount: form.orderAmount?.value }));
     updateWorkPaymentTotals(form);
   };
@@ -723,7 +722,7 @@
     );
   };
   const actDocument = (work, organization, client) => {
-    work = { ...work, items: getOrderItems(work), amount: getOrderAmount(work) };
+    work = { ...work, items: getInvoiceItems(work), amount: getInvoiceAmount(work) };
     const total = totalWorkAmount(work.items);
     const totalQuantity = work.items.reduce((sum, item) => sum + toNumber(item.quantity, 0), 0);
     const executorSigner = signerName(organization);
@@ -1119,7 +1118,6 @@
     items: [{ name: '', quantity: 1, price: 0 }],
     creditedAmount: 0,
     orderAmount: null,
-    invoiceAmount: null,
     updAmount: null,
     paymentDate: null,
     isPayed: false,
@@ -1163,9 +1161,8 @@
             </select></label>
             <label>Номер акта<input name="actNumber" value="${html(work.actNumber)}" /></label>
             <label>Номер счета<input name="invoiceNumber" value="${html(work.invoiceNumber)}" /></label>
-            <label>Сумма позиций<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
+            <label>Сумма счета<input data-work-total readonly value="${html(formatMoney(amount))}" /></label>
             <label>Стоимость заказа<input name="orderAmount" type="number" min="0" step="0.01" data-auto="${work.orderAmount == null}" value="${html(getOrderAmount(work))}" /></label>
-            <label>Сумма счета<input name="invoiceAmount" type="number" min="0" step="0.01" data-auto="${work.invoiceAmount == null}" value="${html(getInvoiceAmount(work))}" /></label>
             <label>Сумма УПД<input name="updAmount" type="number" min="0" step="0.01" data-auto="${work.updAmount == null}" value="${html(getUpdAmount({ ...work, amount }))}" /></label>
             <label>Договор / заказ<input name="workContract" value="${html(work.contract || '')}" /></label>
           </div>
@@ -1226,7 +1223,7 @@
     const source = form.source.value === 'kwork' ? 'kwork' : 'document';
     const existingWork = state.db.works.find((work) => work._id === existingId);
     if (source === 'kwork' && state.db.paymentAllocations.some((entry) => entry.workId === existingId)) throw new Error('Сначала снимите привязки платежей, прежде чем менять источник работы на Kwork');
-    for (const name of ['orderAmount', 'invoiceAmount', 'updAmount']) {
+    for (const name of ['orderAmount', 'updAmount']) {
       const input = form[name];
       if (input && input.dataset.auto !== 'true' && normalizeUpdAmount(input.value) === null) throw new Error('Суммы заказа, счета и УПД должны быть неотрицательными числами');
     }
@@ -1238,7 +1235,6 @@
       items,
       amount,
       orderAmount: !form.orderAmount || form.orderAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.orderAmount.value),
-      invoiceAmount: !form.invoiceAmount || form.invoiceAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.invoiceAmount.value),
       contract: normalizeText(form.workContract?.value || ''),
       updAmount: form.updAmount.dataset.auto === 'true' ? null : normalizeUpdAmount(form.updAmount.value),
       paymentDate: paymentDateTime(enteredPaymentDate),
@@ -1737,7 +1733,7 @@
       state.query = target.value;
       updateWorkResults();
     }
-    if (['updAmount', 'invoiceAmount', 'orderAmount'].includes(target.name)) {
+    if (['updAmount', 'orderAmount'].includes(target.name)) {
       target.dataset.auto = target.value === '' ? 'true' : 'false';
       updateWorkTotals(target.closest('form'));
     }

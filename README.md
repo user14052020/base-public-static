@@ -28,7 +28,9 @@ The Payments page supports creating, editing, deleting, and allocating receipt c
 cover several works; a work can use several payments. Allocation totals cannot exceed the receipt,
 and client, organization and currency must agree. An advance can be saved without any invoice.
 Work cards select existing receipts only and cannot create a payment by changing a cached total.
-Order cost, invoice amount and UPD amount are independent. Paid status uses allocated receipts
+The invoice total always equals quantity times price summed over its items; there is no separate
+editable invoice total or print-time price scaling. The UPD total can still be overridden independently.
+Order cost is retained separately for contract balances. Paid status uses allocated receipts
 against order cost; income reports count actual receipts on their receipt dates, not invoice totals.
 
 For bank imports, select an organization and a bank Excel export. Operations (`Events.xlsx`)

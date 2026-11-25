@@ -1,7 +1,7 @@
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./payment-ledger.js'));
-  else root.OffersDataRevisions = factory(root.OffersPaymentLedger);
-})(globalThis, (ledger) => {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./payment-ledger.js'), require('./work-amounts.js'));
+  else root.OffersDataRevisions = factory(root.OffersPaymentLedger, root.OffersWorkAmounts);
+})(globalThis, (ledger, amounts) => {
   const id = (value) => typeof value === 'string' ? value : value?.$oid || '';
   const canonical = (value) => {
     if (value === undefined) return null;
@@ -26,7 +26,10 @@
       if (!updates.length || updates.some((update) => !['works', 'payments', 'paymentAllocations'].includes(update.collection))) throw new Error('Некорректное исправление данных');
       if (Array.isArray(collections.payments) && updates.every((update) => update.collection === 'works')) {
         const compatible = ledger.exportCompatible(collections);
-        if (updates.every((update) => matches(compatible.works.find((record) => id(record._id) === update.id) || {}, update.fields))) applied.add(revision.id);
+        if (updates.every((update) => {
+          const work = compatible.works.find((record) => id(record._id) === update.id) || {};
+          return matches({ ...work, invoiceAmount: work.invoiceAmount ?? amounts.getInvoiceAmount(work) }, update.fields);
+        })) applied.add(revision.id);
         else conflicts.push(revision.id);
         continue;
       }

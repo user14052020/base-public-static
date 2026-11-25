@@ -365,3 +365,48 @@ test('saving a work cannot create a receipt and retains client requisites and up
   assert.equal(app.state.db.uploadsFiles[0].filename, 'card.docx');
   assert.equal(app.state.db.uploadsChunks[0].data, 'abc');
 });
+
+test('invoice total is always its items total, without hidden overrides or print-time price changes', () => {
+  const work = { ...makeWork(50000), invoiceAmount: 1, orderAmount: 48000 };
+  assert.equal(amounts.getInvoiceAmount(work), 25000);
+  assert.equal(amounts.getInvoiceItems(work)[0].price, 25000);
+  assert.equal(amounts.getInvoiceItems(work)[0].amount, 25000);
+  assert.equal(amounts.getInvoiceAmount({ ...work, amount: 999999 }), 25000);
+  const app = loadApp();
+  app.state.db = app.dbFromCollections({ works: [makeWork(50000)] });
+  const current = app.state.db.works[0]; app.state.editingWorkId = current._id;
+  const markup = app.renderWorkForm();
+  assert.doesNotMatch(markup, /name="invoiceAmount"/);
+  assert.match(markup, /Сумма счета<input data-work-total readonly/);
+  assert.match(markup, /name="updAmount"/);
+  current.orderAmount = 48000;
+  const invoice = app.invoiceDocument(current, { name: 'Seller' }, { name: 'Buyer' });
+  const act = app.actDocument(current, { name: 'Seller' }, { name: 'Buyer' });
+  current.orderAmount = 99999;
+  assert.equal(app.invoiceDocument(current, { name: 'Seller' }, { name: 'Buyer' }), invoice);
+  assert.equal(app.actDocument(current, { name: 'Seller' }, { name: 'Buyer' }), act);
+});
+
+test('legacy separate invoice totals migrate into positions once and survive backup restore without changing payments or UPD', () => {
+  const original = { ...makeWork(48000), items: [{ name: 'CRM', quantity: 1, price: 48000, amount: 48000 }], amount: 48000,
+    orderAmount: 48000, invoiceAmount: 24000, creditedAmount: 48000, paymentDate: '2026-09-08' };
+  const source = structuredClone(original);
+  const app = loadApp();
+  const normalized = app.normalizeWork(original);
+  assert.equal(normalized.items[0].price, 24000);
+  assert.equal(normalized.amount, 24000);
+  assert.equal(normalized.orderAmount, 48000);
+  assert.equal(normalized.updAmount, 48000);
+  assert.equal(normalized.creditedAmount, 48000);
+  assert.ok(!('invoiceAmount' in normalized));
+  assert.deepEqual(JSON.parse(JSON.stringify(app.normalizeWork(normalized))), JSON.parse(JSON.stringify(normalized)));
+  assert.deepEqual(original, source);
+  app.state.db = app.dbFromCollections({ works: [original] });
+  const before = JSON.parse(JSON.stringify(app.state.db.payments));
+  const backup = JSON.parse(JSON.stringify(app.backupPayload()));
+  const restored = app.dbFromCollections(app.reviveMongo(backup).collections);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.payments)), before);
+  assert.equal(restored.works[0].items[0].price, 24000);
+  assert.equal(restored.works[0].updAmount, 48000);
+  assert.ok(!('invoiceAmount' in backup.collections.works[0]));
+});
