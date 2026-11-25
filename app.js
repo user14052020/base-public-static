@@ -494,18 +494,20 @@
       const pdfLayout = ${JSON.stringify(layout)};
       async function generatePdf() {
         const button = document.querySelector('[data-pdf-button]');
+        if (button?.disabled) return;
         if (button) {
           button.disabled = true;
           button.textContent = 'Готовлю PDF...';
         }
         try {
           if (!window.html2pdf) {
+            ${options.parentDownload ? "throw new Error('Не удалось загрузить библиотеку PDF. Обновите страницу и повторите попытку.');" : ''}
             window.print();
             return;
           }
           const root = document.querySelector('[data-print-root]');
           document.body.classList.add('pdf-render');
-          await window.html2pdf()
+          const worker = window.html2pdf()
             .set({
               filename: pdfFilename,
               margin: 0,
@@ -514,8 +516,18 @@
               jsPDF: { unit: 'mm', format: 'a4', orientation: pdfLayout },
               pagebreak: { mode: ['css'], before: '.doc-page + .doc-page', avoid: '.doc-page' }
             })
-            .from(root)
-            .save();
+            .from(root);
+          ${options.parentDownload ? `const blob = await worker.outputPdf('blob');
+          window.parent.postMessage({ type: 'offers-base-pdf', filename: pdfFilename, blob }, ${JSON.stringify(new URL(assetBase).origin)});` : 'await worker.save();'}
+        } catch (error) {
+          let message = document.querySelector('[data-pdf-error]');
+          if (!message) {
+            message = document.createElement('p');
+            message.dataset.pdfError = '';
+            message.setAttribute('role', 'alert');
+            document.querySelector('.no-print').appendChild(message);
+          }
+          message.textContent = error.message || 'Не удалось сформировать PDF';
         } finally {
           document.body.classList.remove('pdf-render');
           if (button) {
@@ -897,9 +909,18 @@
     dialog.className = 'document-preview';
     dialog.setAttribute('aria-label', 'Предварительный просмотр акта сверки');
     dialog.innerHTML = '<header><h2>Акт сверки</h2><button class="secondary" type="button" data-close-preview aria-label="Закрыть предварительный просмотр">Закрыть</button></header><iframe title="Акт сверки для печати"></iframe>';
-    dialog.querySelector('iframe').srcdoc = htmlDocument;
+    const frame = dialog.querySelector('iframe');
+    const origin = new URL(window.location.href).origin;
+    const receivePdf = (event) => {
+      if (event.source !== frame.contentWindow || event.origin !== origin || event.data?.type !== 'offers-base-pdf') return;
+      const { blob, filename } = event.data;
+      if (!(blob instanceof Blob) || blob.type !== 'application/pdf' || !blob.size || typeof filename !== 'string' || !filename.endsWith('.pdf') || /[\\/\u0000-\u001f]/.test(filename)) return;
+      download(blob, filename);
+    };
+    window.addEventListener('message', receivePdf);
+    frame.srcdoc = htmlDocument;
     dialog.querySelector('[data-close-preview]').addEventListener('click', () => dialog.close());
-    dialog.addEventListener('close', () => dialog.remove());
+    dialog.addEventListener('close', () => { window.removeEventListener('message', receivePdf); dialog.remove(); });
     document.body.appendChild(dialog);
     dialog.showModal();
   };

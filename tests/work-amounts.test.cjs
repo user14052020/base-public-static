@@ -81,6 +81,8 @@ const loadApp = () => {
     sessionStorage: { getItem: () => null },
     localStorage: { setItem: () => {} },
     crypto: require('node:crypto').webcrypto,
+    Blob,
+    setTimeout,
     URL
   };
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
@@ -171,6 +173,8 @@ test('statement printing uses an isolated preview iframe without depending on br
   let attached = false;
   let shown = false;
   let removed = false;
+  app.window.addEventListener = (event, handler) => { assert.equal(event, 'message'); listeners.message = handler; };
+  app.window.removeEventListener = (event, handler) => { assert.equal(event, 'message'); assert.equal(handler, listeners.message); listeners.message = null; };
   const dialog = { setAttribute: () => {}, querySelector: (selector) => selector === 'iframe' ? frame : { addEventListener: (event, handler) => { listeners.click = handler; } },
     addEventListener: (event, handler) => { listeners[event] = handler; }, showModal: () => { shown = true; },
     close: () => listeners.close(), remove: () => { removed = true; } };
@@ -182,6 +186,52 @@ test('statement printing uses an isolated preview iframe without depending on br
   assert.equal(shown, true);
   listeners.click();
   assert.equal(removed, true);
+  assert.equal(listeners.message, null);
+});
+
+test('statement HTML renders a PDF blob and hands downloads to its trusted parent', async () => {
+  const app = loadApp();
+  const page = app.printableShell('statement', '<main>Statement</main>', 'portrait', { pdf: true, parentDownload: true });
+  const script = /<script>([\s\S]*?)<\/script>/.exec(page)[1];
+  const button = {};
+  const blob = new Blob(['test PDF'], { type: 'application/pdf' });
+  let posted;
+  let saved = false;
+  const worker = { set: () => worker, from: () => worker, outputPdf: async (type) => { assert.equal(type, 'blob'); return blob; }, save: () => { saved = true; } };
+  const scope = { window: { html2pdf: () => worker, addEventListener: () => {}, parent: { postMessage: (data, origin) => { posted = { data, origin }; } } },
+    document: { querySelector: () => button, body: { classList: { add: () => {}, remove: () => {} } } } };
+  vm.runInNewContext(`${script};globalThis.exportPdf = generatePdf;`, scope);
+  await scope.exportPdf();
+  assert.equal(posted.origin, 'https://example.test');
+  assert.equal(posted.data.type, 'offers-base-pdf');
+  assert.equal(posted.data.filename, 'statement.pdf');
+  assert.equal(posted.data.blob, blob);
+  assert.equal(saved, false);
+  assert.equal(button.disabled, false);
+});
+
+test('preview downloads accept only PDF blobs from the exact same-origin preview frame', () => {
+  const app = loadApp();
+  const frame = { contentWindow: {} };
+  const callbacks = {};
+  const downloaded = [];
+  const dialog = { setAttribute: () => {}, querySelector: (selector) => selector === 'iframe' ? frame : { addEventListener: () => {} },
+    addEventListener: (event, handler) => { callbacks[event] = handler; }, showModal: () => {}, remove: () => {} };
+  app.document.createElement = (tag) => tag === 'dialog' ? dialog : { click() { downloaded.push(this.download); } };
+  app.document.body = { appendChild: () => {} };
+  app.window.addEventListener = (event, handler) => { callbacks[event] = handler; };
+  app.window.removeEventListener = () => {};
+  app.openSettlementDocument('<html>statement</html>');
+  const data = { type: 'offers-base-pdf', blob: new Blob(['PDF'], { type: 'application/pdf' }), filename: 'statement.pdf' };
+  const event = { source: frame.contentWindow, origin: 'https://example.test', data };
+  callbacks.message({ ...event, source: {} });
+  callbacks.message({ ...event, origin: 'https://untrusted.example' });
+  callbacks.message({ ...event, data: { ...data, filename: '../outside.pdf' } });
+  callbacks.message({ ...event, data: { ...data, blob: new Blob(['html'], { type: 'text/html' }) } });
+  assert.deepEqual(downloaded, []);
+  callbacks.message(event);
+  assert.deepEqual(downloaded, ['statement.pdf']);
+  callbacks.close();
 });
 
 test('backup round trips preserve automatic and manual UPD amounts', () => {

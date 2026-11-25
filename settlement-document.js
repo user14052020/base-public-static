@@ -55,7 +55,7 @@
       </main>`);
     }
     const title = `акт-сверки${number ? `№${sanitizeDocumentPart(number)}` : ''}от${displayDate(date)}-${sanitizeDocumentPart(buyer)}`;
-    return printableShell(title, pages.join(''), 'portrait', { pdf: true, styles: `
+    return printableShell(title, pages.join(''), 'portrait', { pdf: true, parentDownload: true, styles: `
       .settlement-document { min-height:296.5mm; padding:10mm; font-size:9pt; line-height:1.2; }
       .settlement-document h1 { font-size:14pt; text-align:center; margin:0 0 2mm; }
       .settlement-period { text-align:center; margin-bottom:3mm; }
