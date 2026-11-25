@@ -27,7 +27,9 @@ user explicitly chooses to fill them. Reports do not change income totals or the
 The Payments page supports creating, editing, deleting, and allocating receipt cards. A payment can
 cover several works; a work can use several payments. Allocation totals cannot exceed the receipt,
 and client, organization and currency must agree. An advance can be saved without any invoice.
-Work cards select existing receipts only and cannot create a payment by changing a cached total.
+Work cards show linked receipts as read-only information. Add/Edit opens the shared receipt form in
+a modal without discarding the work draft. Payment amounts, allocation amounts and types are edited
+only in that receipt form; saving a work never rewrites payment allocations.
 The invoice total always equals quantity times price summed over its items; there is no separate
 editable invoice total or print-time price scaling. The UPD total can still be overridden independently.
 Order cost is retained separately for contract balances. Paid status uses allocated receipts

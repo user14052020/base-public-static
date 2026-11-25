@@ -6,6 +6,8 @@
     const { html, formatMoney, paymentDateText } = deps;
     let editingId = null;
     let clientFilter = '';
+    let editingWorkId = '';
+    let modal = null;
     const options = (items, selected, empty) => `<option value="">${empty}</option>${items.map((item) => `<option value="${html(item._id)}" ${item._id === selected ? 'selected' : ''}>${html(item.name)}</option>`).join('')}`;
     const workOptions = (clientId, organizationId, selected = '') => `<option value="">Не распределено</option>${deps.getDb().works.filter((work) => work.source !== 'kwork' && work.clientId === clientId && work.executorOrganizationId === organizationId)
       .map((work) => `<option value="${html(work._id)}" ${selected === work._id ? 'selected' : ''}>${html(`Счет ${work.invoiceNumber || 'без номера'} · ${work.items.map((item) => item.name).join('; ')} · заказ ${formatMoney(amounts.getOrderAmount(work))}`)}</option>`).join('')}`;
@@ -17,10 +19,12 @@
     const renderForm = () => {
       if (editingId === null) return '';
       const db = deps.getDb();
-      const payment = db.payments.find((item) => item._id === editingId) || { _id: '', source: 'manual', organizationId: db.organizations[0]?._id || '', clientId: clientFilter, amount: '', date: '', contract: '', documentNumber: '', purpose: '' };
-      const entries = db.paymentAllocations.filter((entry) => entry.paymentId === payment._id);
+      const work = db.works.find((item) => item._id === editingWorkId);
+      const payment = db.payments.find((item) => item._id === editingId) || { _id: '', source: 'manual', organizationId: work?.executorOrganizationId || db.organizations[0]?._id || '', clientId: work?.clientId || clientFilter, amount: '', date: '', contract: work?.contract || '', documentNumber: '', purpose: '' };
+      const entries = payment._id ? db.paymentAllocations.filter((entry) => entry.paymentId === payment._id) : work ? [{ workId: work._id, amount: '', kind: 'payment' }] : [];
       return `<section class="browser-section stack"><div class="row between"><h2>${payment._id ? 'Редактирование платежа' : 'Новый платеж'}</h2><button class="secondary" data-action="cancel-payment">Закрыть</button></div>
         <form class="stack" data-form="payment"><input name="paymentId" type="hidden" value="${html(payment._id)}" />
+          <p class="message error" role="alert" data-payment-error hidden></p>
           <div class="grid two"><label>Организация<select name="paymentOrganizationId" required>${options(db.organizations, payment.organizationId, 'Выберите организацию')}</select></label>
           <label>Клиент<select name="paymentClientId" required>${options(db.clients, payment.clientId, 'Выберите клиента')}</select></label>
           <label>Дата платежа<input name="receiptDate" required placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(payment.date))}" /></label>
@@ -35,12 +39,34 @@
           <div class="row"><button type="submit">Сохранить платеж</button><button type="button" class="secondary" data-action="cancel-payment">Отмена</button></div>
         </form></section>`;
     };
+    const closeModal = () => {
+      if (!modal) return null;
+      const current = modal; modal = null;
+      editingId = current.previousEditingId; editingWorkId = current.previousWorkId;
+      current.dialog.close(); current.dialog.remove();
+      return current;
+    };
+    const openModal = ({ workId, paymentId = '', onSaved }) => {
+      const db = deps.getDb();
+      const work = db.works.find((item) => item._id === workId);
+      if (!work) throw new Error('Сначала сохраните работу');
+      if (paymentId && !db.payments.some((item) => item._id === paymentId)) throw new Error('Платеж не найден');
+      closeModal();
+      const dialog = deps.document.createElement('dialog');
+      const current = { dialog, onSaved, previousEditingId: editingId, previousWorkId: editingWorkId };
+      editingId = paymentId; editingWorkId = workId; modal = current;
+      dialog.className = 'payment-dialog';
+      dialog.setAttribute('aria-label', paymentId ? 'Редактирование платежа' : 'Новый платеж');
+      dialog.innerHTML = renderForm();
+      dialog.addEventListener('close', () => { if (modal === current) closeModal(); });
+      deps.document.body.appendChild(dialog); dialog.showModal();
+    };
     const render = () => {
       const db = deps.getDb();
       const payments = db.payments.filter((payment) => !clientFilter || payment.clientId === clientFilter).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       return `<section class="browser-section stack"><div class="row between"><h2>Журнал платежей</h2><button data-action="new-payment">Новый платеж</button></div>
         <label class="payment-client-filter">Клиент<select data-payment-filter>${options(db.clients, clientFilter, 'Все клиенты')}</select></label></section>
-        ${renderForm()}<section class="browser-section stack"><div class="table-wrap"><table class="payment-journal"><thead><tr><th>Дата</th><th>Клиент / договор</th><th>Документ</th><th>Сумма</th><th>Распределено</th><th>Остаток / аванс</th><th>Источник</th><th></th></tr></thead><tbody>
+        ${modal ? '' : renderForm()}<section class="browser-section stack"><div class="table-wrap"><table class="payment-journal"><thead><tr><th>Дата</th><th>Клиент / договор</th><th>Документ</th><th>Сумма</th><th>Распределено</th><th>Остаток / аванс</th><th>Источник</th><th></th></tr></thead><tbody>
           ${payments.map((payment) => { const free = ledger.availableAmount(db, payment._id); return `<tr><td>${html(paymentDateText(payment.date) || 'Дата не указана')}</td><td>${html(db.clients.find((client) => client._id === payment.clientId)?.name || 'Не указан')}<br><small>${html(payment.contract || '')}</small></td><td>${html(payment.documentNumber || 'Без номера')}</td><td class="numeric">${formatMoney(payment.amount)}</td><td class="numeric">${formatMoney(payment.amount - free)}</td><td class="numeric">${formatMoney(free)}</td><td>${payment.source === 'bank' ? 'Банк' : 'Вручную'}${!ledger.active(payment) ? `<br><span class="payment-review">${payment.reviewStatus === 'possible-duplicate' ? 'Проверить повтор' : 'Требует проверки'}</span>` : ''}</td><td><div class="row"><button class="secondary" data-action="edit-payment" data-id="${html(payment._id)}">Редактировать</button><button class="danger" data-action="delete-payment" data-id="${html(payment._id)}">Удалить</button></div></td></tr>`; }).join('')}
           </tbody></table></div>${payments.length ? '' : '<p class="muted">Платежей нет.</p>'}</section>`;
     };
@@ -61,8 +87,7 @@
       for (const input of form.querySelectorAll('[name="allocatedWorkId"]')) input.innerHTML = workOptions(form.paymentClientId.value, form.paymentOrganizationId.value, input.value);
       return true;
     };
-    const handleSubmit = (form) => {
-      if (form.dataset.form !== 'payment') return false;
+    const saveForm = (form) => {
       const db = deps.getDb(); const paymentId = form.paymentId.value || deps.uid();
       const previous = db.payments.find((payment) => payment._id === paymentId);
       if (!db.clients.some((client) => client._id === form.paymentClientId.value) || !db.organizations.some((org) => org._id === form.paymentOrganizationId.value)) throw new Error('Выберите клиента и организацию');
@@ -72,11 +97,28 @@
       const next = ledger.savePayment(db, { ...previous, _id: paymentId, source: previous?.source || 'manual', currency: previous?.currency || 'RUB',
         organizationId: form.paymentOrganizationId.value, clientId: form.paymentClientId.value, date: dates.paymentDateTime(form.receiptDate.value.trim()),
         amount: form.receiptAmount.value, documentNumber: form.receiptNumber.value.trim(), contract: form.receiptContract.value.trim(), purpose: form.receiptPurpose.value.trim() }, entries);
-      deps.replaceCollections(next); deps.saveDb(); editingId = null; deps.message('Платеж сохранен'); return true;
+      deps.replaceCollections(next); deps.saveDb();
+      if (modal && form.closest?.('dialog') === modal.dialog) closeModal().onSaved?.();
+      else { editingId = null; editingWorkId = ''; deps.message('Платеж сохранен'); }
+      return true;
+    };
+    const handleSubmit = (form) => {
+      if (form.dataset.form !== 'payment') return false;
+      try { return saveForm(form); }
+      catch (error) {
+        if (!modal || form.closest?.('dialog') !== modal.dialog) throw error;
+        const message = form.querySelector('[data-payment-error]');
+        message.textContent = error.message; message.hidden = false;
+        return true;
+      }
     };
     const handleAction = (action, target) => {
-      if (action === 'new-payment' || action === 'edit-payment') { editingId = action === 'new-payment' ? '' : target.dataset.id; deps.showView?.(); deps.render(); return true; }
-      if (action === 'cancel-payment') { editingId = null; deps.render(); return true; }
+      if (action === 'new-payment' || action === 'edit-payment') { editingId = action === 'new-payment' ? '' : target.dataset.id; editingWorkId = ''; deps.showView?.(); deps.render(); return true; }
+      if (action === 'cancel-payment') {
+        if (modal && target.closest?.('dialog') === modal.dialog) closeModal();
+        else { editingId = null; editingWorkId = ''; deps.render(); }
+        return true;
+      }
       if (action === 'delete-payment') {
         if (deps.confirm('Удалить платеж из учета и снять его привязки к работам?')) { deps.replaceCollections(ledger.deletePayment(deps.getDb(), target.dataset.id)); deps.saveDb(); editingId = null; deps.render(); }
         return true;
@@ -89,7 +131,7 @@
       if (action === 'remove-payment-share') { const form = target.closest('form'); target.closest('[data-payment-allocation-row]').remove(); updateRemainder(form); return true; }
       return false;
     };
-    return { render, handleInput, handleChange, handleSubmit, handleAction };
+    return { render, handleInput, handleChange, handleSubmit, handleAction, openModal, closeModal };
   };
   return { create };
 });

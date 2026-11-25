@@ -29,6 +29,10 @@
 .payment-client-filter { max-width:420px; }
 .payment-journal { min-width:1150px; }
 .payment-review { color:var(--danger); }
+.work-payment-list > .row { padding:10px 0; border-bottom:1px solid var(--line); }
+.payment-dialog { width:min(980px,96vw); max-height:92vh; overflow:auto; padding:20px; border:1px solid var(--line-dark); border-radius:8px; }
+.payment-dialog::backdrop { background:rgba(0,0,0,0.45); }
+.payment-dialog .browser-section { padding:0; border:0; }
 
 body {
   margin: 0;

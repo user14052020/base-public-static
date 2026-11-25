@@ -1015,13 +1015,25 @@
     const entries = ledger.workPayments(state.db, work._id);
     return entries.length ? `<details class="work-payment-history"><summary>Платежей: ${entries.length}</summary>${entries.map((entry) => `<div>${html(paymentDateText(entry.payment.date) || 'Без даты')} · ${formatMoney(entry.amount)}</div>`).join('')}</details>` : '';
   };
-  const workPaymentOptions = (clientId, organizationId, workId, selected = '') => `<option value="">Выберите платеж</option>${state.db.payments.filter((payment) => payment.clientId === clientId && payment.organizationId === organizationId
-    && (ledger.availableAmount(state.db, payment._id, workId) > 0 || payment._id === selected)).map((payment) => `<option value="${html(payment._id)}" ${payment._id === selected ? 'selected' : ''}>${html(`${paymentDateText(payment.date) || 'Без даты'} · № ${payment.documentNumber || '—'} · ${formatMoney(payment.amount)} · доступно ${formatMoney(ledger.availableAmount(state.db, payment._id, workId))}`)}</option>`).join('')}`;
-  const workPaymentRow = (entry, work) => `<div class="payment-allocation-row" data-work-payment-row>
-    <label>Платеж<select name="linkedPaymentId">${workPaymentOptions(work.clientId, work.executorOrganizationId, work._id, entry.paymentId)}</select></label>
-    <label>Сумма привязки<input name="linkedPaymentAmount" type="number" min="0.01" step="0.01" value="${html(entry.amount ?? '')}" /></label>
-    <label>Назначение<select name="linkedPaymentKind"><option value="payment">Оплата</option><option value="advance" ${entry.kind === 'advance' ? 'selected' : ''}>Аванс</option></select></label>
-    <button type="button" class="danger" data-action="remove-work-payment">Отвязать</button></div>`;
+  const renderWorkPayments = (work) => {
+    const entries = work._id ? ledger.workPayments(state.db, work._id) : [];
+    return `<div class="row between"><h3>Платежи</h3><button type="button" class="secondary" data-action="new-work-payment" ${work._id ? '' : 'disabled title="Сначала сохраните работу"'}>Добавить платеж</button></div>
+      <div class="work-payment-list">${entries.map(({ payment }) => `<div class="row between"><span>${html(`Платеж ${payment.documentNumber ? `№ ${payment.documentNumber} ` : ''}от ${paymentDateText(payment.date) || 'дата не указана'}`)}</span><button type="button" class="secondary" data-action="edit-work-payment" data-id="${html(payment._id)}">Редактировать</button></div>`).join('') || '<p class="muted">Платежи не привязаны</p>'}</div>
+      <p class="message" role="status" data-work-payment-message hidden></p>`;
+  };
+  const openWorkPayment = (form, paymentId = '') => {
+    const work = state.db.works.find((item) => item._id === form._id.value);
+    const host = form.querySelector('[data-work-direct-payments]');
+    if (!work || work.clientId !== form.clientId.value || work.executorOrganizationId !== form.executorOrganizationId.value) {
+      const message = host.querySelector('[data-work-payment-message]');
+      message.textContent = 'Сначала сохраните работу и изменения клиента или организации'; message.hidden = false;
+      return;
+    }
+    paymentView.openModal({ workId: work._id, paymentId, onSaved: () => {
+      host.innerHTML = renderWorkPayments(state.db.works.find((item) => item._id === work._id));
+      updateWorkResults();
+    } });
+  };
   const renderWorks = () => {
     app.innerHTML = shell(`
       <section class="panel stack">
@@ -1161,8 +1173,7 @@
             <label>Дата операции Kwork<input name="paymentDate" placeholder="ДД.ММ.ГГГГ ЧЧ:ММ:СС" value="${html(paymentDateText(work.paymentDate))}" /></label>
           </div>
           <div data-work-direct-payments ${work.source !== 'kwork' ? '' : 'hidden'} class="stack">
-            <div class="row between"><h3>Привязанные платежи</h3><button type="button" class="secondary" data-action="add-work-payment">Выбрать платеж</button></div>
-            <div class="stack" data-work-payment-rows>${(work._id ? ledger.workPayments(state.db, work._id) : []).map((entry) => workPaymentRow(entry, work)).join('')}</div>
+            ${renderWorkPayments(work)}
           </div>
           <div class="stack">
             <div class="row between">
@@ -1242,10 +1253,7 @@
       invoiceDate: documentDate.toISOString()
     });
     const collections = { ...state.db, works: [...state.db.works.filter((work) => work._id !== payload._id), payload] };
-    const entries = source === 'kwork' ? [] : [...form.querySelectorAll('[data-work-payment-row]')].map((row) => ({
-      paymentId: row.querySelector('[name="linkedPaymentId"]').value, amount: row.querySelector('[name="linkedPaymentAmount"]').value, kind: row.querySelector('[name="linkedPaymentKind"]').value
-    })).filter((entry) => entry.paymentId || entry.amount);
-    replaceCollections(ledger.setWorkAllocations(collections, payload._id, entries));
+    replaceCollections(ledger.normalize(collections));
     saveDb();
     state.editingWorkId = null;
     showMessage('Работа сохранена');
@@ -1749,10 +1757,6 @@
       state.workFilters[filter] = target.value;
       updateWorkResults();
     }
-    if (['clientId', 'executorOrganizationId'].includes(target.name)) {
-      const form = target.closest('form');
-      for (const input of form.querySelectorAll('[name="linkedPaymentId"]')) input.innerHTML = workPaymentOptions(form.clientId.value, form.executorOrganizationId.value, form._id.value, input.value);
-    }
   });
 
   document.addEventListener('click', async (event) => {
@@ -1797,12 +1801,7 @@
           renderWorks();
         }
       }
-      if (action === 'add-work-payment') {
-        const form = target.closest('form'); const row = document.createElement('div');
-        row.innerHTML = workPaymentRow({}, { _id: form._id.value, clientId: form.clientId.value, executorOrganizationId: form.executorOrganizationId.value });
-        form.querySelector('[data-work-payment-rows]').appendChild(row.firstElementChild);
-      }
-      if (action === 'remove-work-payment') target.closest('[data-work-payment-row]').remove();
+      if (action === 'new-work-payment' || action === 'edit-work-payment') openWorkPayment(target.closest('form'), target.dataset.id || '');
       if (action === 'reset-search') {
         state.query = '';
         state.workFilters = { clientId: '', dateFrom: '', dateTo: '' };

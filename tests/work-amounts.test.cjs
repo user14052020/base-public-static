@@ -88,7 +88,7 @@ const loadApp = () => {
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
     globalThis.testApp = { state, normalizeWork, aggregateReport, backupPayload, dbFromCollections,
       reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm, shell,
-      filteredWorks, renderWorks, renderWorkResults, printableShell, amountToWords, personShortName, sanitizeDocumentPart, openSettlementDocument, element: app };
+      filteredWorks, renderWorks, renderWorkResults, printableShell, amountToWords, personShortName, sanitizeDocumentPart, openSettlementDocument, openWorkPayment, paymentView, element: app };
   })();`), context);
   return { ...context.testApp, listeners, window: context.window, document: context.document };
 };
@@ -288,13 +288,6 @@ const makeForm = () => {
   form.updAmount.closest = () => form;
   return { form, fields, total };
 };
-const linkPayment = (form, paymentId, amount) => {
-  const original = form.querySelectorAll;
-  const fields = { linkedPaymentId: { value: paymentId }, linkedPaymentAmount: { value: String(amount) }, linkedPaymentKind: { value: 'payment' } };
-  const row = { querySelector: (selector) => fields[/name="(.*?)"/.exec(selector)?.[1]] };
-  form.querySelectorAll = (selector) => selector === '[data-work-payment-row]' ? [row] : original(selector);
-};
-
 test('form tracks the total automatically until a manual edit, and clearing resets it', () => {
   const app = loadApp();
   const { form, fields, total } = makeForm();
@@ -316,9 +309,10 @@ test('form tracks the total automatically until a manual edit, and clearing rese
 test('saving and reopening a work preserves UPD mode without changing accounting amounts', () => {
   for (const value of [null, 0, 50000]) {
     const app = loadApp();
-    app.state.db = app.dbFromCollections({ payments: [{ _id: 'existing-payment', clientId: 'cccccccccccccccccccccccc', organizationId: 'bbbbbbbbbbbbbbbbbbbbbbbb', date: '2026-11-11', amount: 25000, source: 'manual' }], paymentAllocations: [] });
+    const existing = makeWork(value);
+    app.state.db = app.dbFromCollections({ works: [existing], payments: [{ _id: 'existing-payment', clientId: existing.clientId, organizationId: existing.executorOrganizationId, date: '2026-11-11', amount: 25000, source: 'manual' }], paymentAllocations: [{ paymentId: 'existing-payment', workId: existing._id, amount: 25000 }] });
     const { form } = makeForm();
-    linkPayment(form, 'existing-payment', 25000);
+    form._id.value = existing._id;
     form.updAmount.value = String(value ?? 25000);
     form.updAmount.dataset.auto = value === null ? 'true' : 'false';
     app.saveWorkFromForm(form);
@@ -344,7 +338,6 @@ test('receipt date and time use one input and the legacy duplicate amount input 
   assert.ok(markup.includes('11.11.2026 13:45:16+03:00'));
   const { form } = makeForm();
   form._id.value = work._id;
-  linkPayment(form, app.state.db.payments[0]._id, 25000);
   form.paymentDate.value = '11.11.2026 13:45:16+03:00';
   app.saveWorkFromForm(form);
   assert.equal(app.state.db.works[0].paymentDate, '2026-11-11T13:45:16+03:00');
@@ -418,9 +411,54 @@ test('work payment totals and remaining-order widgets are removed without changi
   const before = JSON.stringify(app.backupPayload().collections);
   const markup = app.renderWorkForm() + app.renderWorkResults();
   assert.doesNotMatch(markup, /Получено по платежам|Осталось по заказу|data-work-received|data-work-balance|work-balance/);
-  assert.match(markup, /name="linkedPaymentId"/);
-  assert.match(markup, /name="linkedPaymentAmount"/);
+  assert.doesNotMatch(markup, /name="linkedPayment(?:Id|Amount|Kind)"/);
+  assert.match(markup, /data-action="edit-work-payment"/);
+  assert.match(markup, /data-action="new-work-payment"/);
   assert.equal(JSON.stringify(app.backupPayload().collections), before);
   const source = readFileSync(join(__dirname, '../app.js'), 'utf8');
   assert.doesNotMatch(source, /updateWorkPaymentTotals|data-work-received|data-work-balance/);
+});
+
+test('saving a work never edits its receipt allocations or types', () => {
+  const app = loadApp();
+  const work = { ...makeWork(48000), paymentDate: '2026-11-11' };
+  app.state.db = app.dbFromCollections({ works: [work] });
+  const before = JSON.parse(JSON.stringify({ payments: app.state.db.payments, allocations: app.state.db.paymentAllocations }));
+  const { form } = makeForm(); form._id.value = work._id;
+  form.creditedAmount.value = '1';
+  app.saveWorkFromForm(form);
+  assert.deepEqual(JSON.parse(JSON.stringify({ payments: app.state.db.payments, allocations: app.state.db.paymentAllocations })), before);
+  assert.equal(app.state.db.works[0].creditedAmount, 25000);
+});
+
+test('receipt modal callbacks update only the work payment information and results, preserving unsaved work inputs', () => {
+  const app = loadApp();
+  const work = { ...makeWork(null), paymentDate: '2026-11-11' };
+  app.state.db = app.dbFromCollections({ works: [work] });
+  const { form, fields } = makeForm(); form._id.value = work._id;
+  fields.itemName.value = 'Unsaved service draft';
+  const host = { innerHTML: '' }; const results = { innerHTML: '' };
+  form.querySelector = () => host;
+  app.document.querySelector = (selector) => selector === '[data-work-results]' ? results : null;
+  let opened;
+  app.paymentView.openModal = (options) => { opened = options; };
+  const paymentId = app.state.db.payments[0]._id;
+  app.openWorkPayment(form, paymentId);
+  assert.equal(opened.workId, work._id);
+  assert.equal(opened.paymentId, paymentId);
+  opened.onSaved();
+  assert.match(host.innerHTML, /data-action="edit-work-payment"/);
+  assert.match(results.innerHTML, /Development/);
+  assert.equal(fields.itemName.value, 'Unsaved service draft');
+});
+
+test('changing the work party first requires saving it before a receipt can be edited', () => {
+  const app = loadApp(); const work = makeWork(null);
+  app.state.db = app.dbFromCollections({ works: [work] });
+  const { form } = makeForm(); form._id.value = work._id; form.clientId.value = 'changed-client';
+  const message = { hidden: true }; form.querySelector = () => ({ querySelector: () => message });
+  app.paymentView.openModal = () => assert.fail('must not link a receipt using stale work party information');
+  app.openWorkPayment(form);
+  assert.equal(message.hidden, false);
+  assert.match(message.textContent, /Сначала сохраните/);
 });
