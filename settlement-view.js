@@ -13,7 +13,8 @@
         organizationId: state.organizationId, clientId, dateFrom: state.dateFrom, dateTo: state.dateTo,
         openingBalance: manual && state.manualOpening ? (state.openingSide === 'organization' ? 1 : -1) * Number(state.openingAmount) : null });
     };
-    const balanceText = (value) => value > 0 ? `Клиент должен ${formatMoney(value)}` : value < 0 ? `Мы должны ${formatMoney(-value)}` : 'Расчеты закрыты';
+    const balanceText = (value, incomplete = false) => incomplete ? `Предварительное сальдо ${formatMoney(value)}`
+      : value > 0 ? `Клиент должен ${formatMoney(value)}` : value < 0 ? `Мы должны ${formatMoney(-value)}` : 'Расчеты закрыты';
     const metrics = (items) => `<div class="settlement-metrics">${items.map(([label, value]) => `<div><span class="muted">${label}</span><strong>${html(value)}</strong></div>`).join('')}</div>`;
     const renderResults = () => {
       if (!state.organizationId) return '';
@@ -24,15 +25,17 @@
           const reports = clients.filter((client) => deps.getDb().works.some((work) => work.clientId === client._id && work.executorOrganizationId === state.organizationId && work.source !== 'kwork'))
             .map((client) => ({ client, report: build(client._id) }));
           const sum = (select) => reports.reduce((total, item) => total + Math.round(select(item.report) * 100), 0) / 100;
-          return `${metrics([['Сумма УПД', formatMoney(sum((r) => r.totalUpd))], ['Поступило платежей', formatMoney(sum((r) => r.totalPaid))],
-            ['Долг клиентов', formatMoney(sum((r) => Math.max(0, r.closingBalance)))], ['Наш долг / авансы', formatMoney(sum((r) => Math.max(0, -r.closingBalance)))]])}
+          const incomplete = reports.some((item) => item.report.warnings.length);
+          return `${incomplete ? '<p class="message error" role="alert">Есть замечания к платежам. Сальдо предварительное.</p>' : ''}
+            ${metrics([['Сумма УПД', formatMoney(sum((r) => r.totalUpd))], ['Поступило платежей', formatMoney(sum((r) => r.totalPaid))],
+            [incomplete ? 'Расчетный долг клиентов' : 'Долг клиентов', formatMoney(sum((r) => Math.max(0, r.closingBalance)))], ['Наш долг / авансы', formatMoney(sum((r) => Math.max(0, -r.closingBalance)))]])}
             <div class="table-wrap"><table class="settlement-table"><thead><tr><th>Клиент</th><th>Сальдо на начало</th><th>Сумма УПД</th><th>Поступило</th><th>Сальдо на конец</th><th>Данные</th><th></th></tr></thead>
-              <tbody>${reports.map(({ client, report }) => `<tr><td>${html(client.name)}</td><td class="numeric">${formatMoney(report.openingBalance)}</td><td class="numeric">${formatMoney(report.totalUpd)}</td><td class="numeric">${formatMoney(report.totalPaid)}</td><td>${html(balanceText(report.closingBalance))}</td><td>${report.warnings.length ? `Замечаний: ${report.warnings.length}` : 'Без замечаний'}</td><td><button class="secondary" data-action="settlement-client" data-id="${html(client._id)}">Акт сверки</button></td></tr>`).join('')}</tbody></table></div>
+              <tbody>${reports.map(({ client, report }) => `<tr><td>${html(client.name)}</td><td class="numeric">${formatMoney(report.openingBalance)}</td><td class="numeric">${formatMoney(report.totalUpd)}</td><td class="numeric">${formatMoney(report.totalPaid)}</td><td>${html(balanceText(report.closingBalance, report.warnings.length > 0))}</td><td>${report.warnings.length ? `Замечаний: ${report.warnings.length}` : 'Без замечаний'}</td><td><button class="secondary" data-action="settlement-client" data-id="${html(client._id)}">Акт сверки</button></td></tr>`).join('')}</tbody></table></div>
             ${reports.length ? '' : '<p class="muted">Нет работ по выбранной организации.</p>'}`;
         }
         const report = build(state.clientId, true);
         return `${metrics([['Сальдо на начало', formatMoney(report.openingBalance)], ['Сумма УПД', formatMoney(report.totalUpd)], ['Поступило платежей', formatMoney(report.totalPaid)], ['Сальдо на конец', formatMoney(report.closingBalance)]])}
-          <p class="settlement-balance" role="status">${html(balanceText(report.closingBalance))}</p>
+          <p class="settlement-balance" role="status">${html(balanceText(report.closingBalance, report.warnings.length > 0))}</p>
           ${report.excludedKwork ? `<p class="muted">Работ Kwork без УПД: ${report.excludedKwork}. В сверку по документам не включены.</p>` : ''}
           ${report.warnings.length ? `<section class="settlement-warnings"><h3>Замечания к данным</h3><ul>${report.warnings.map((warning) => `<li>${html(warning.message)} <button class="secondary" data-action="edit-work" data-id="${html(warning.workId)}">Исправить</button></li>`).join('')}</ul></section>` : ''}
           <div class="row"><button data-action="print-settlement" ${report.warnings.length ? 'disabled' : ''}>Скачать акт сверки PDF</button></div>

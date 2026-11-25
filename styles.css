@@ -369,6 +369,11 @@ th {
 .settlement-warnings ul { margin:8px 0; padding-left:18px; }
 .settlement-warnings li { margin:8px 0; }
 .settlement-warnings button { padding:4px 8px; font-size:12px; }
+.document-preview { width:min(1100px,96vw); height:92vh; max-width:96vw; max-height:92vh; padding:0; border:1px solid var(--line-dark); border-radius:8px; overflow:hidden; }
+.document-preview::backdrop { background:rgba(0,0,0,0.45); }
+.document-preview header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-bottom:1px solid var(--line); height:64px; }
+.document-preview h2 { margin:0; font-size:18px; }
+.document-preview iframe { width:100%; height:calc(100% - 64px); border:0; display:block; background:#fff; }
 
 @media (max-width: 980px) {
   .topbar { flex-direction: column; align-items: flex-start; }

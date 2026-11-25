@@ -892,6 +892,18 @@
     printWindow.document.close();
   };
 
+  const openSettlementDocument = (htmlDocument) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'document-preview';
+    dialog.setAttribute('aria-label', 'Предварительный просмотр акта сверки');
+    dialog.innerHTML = '<header><h2>Акт сверки</h2><button class="secondary" type="button" data-close-preview aria-label="Закрыть предварительный просмотр">Закрыть</button></header><iframe title="Акт сверки для печати"></iframe>';
+    dialog.querySelector('iframe').srcdoc = htmlDocument;
+    dialog.querySelector('[data-close-preview]').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.appendChild(dialog);
+    dialog.showModal();
+  };
+
   const openPrintDocument = (kind, workId) => {
     const work = state.db.works.find((item) => item._id === workId);
     if (!work) throw new Error('Работа не найдена');
@@ -1850,7 +1862,7 @@
   });
   const settlementView = window.OffersSettlementView.create({
     html, formatMoney, displayDate, paymentDateText, document, amountToWords, personShortName, printableShell, sanitizeDocumentPart,
-    today: todayInput, getDb: () => state.db, render, openDocument: openPrintWindow
+    today: todayInput, getDb: () => state.db, render, openDocument: openSettlementDocument
   });
   window.addEventListener?.('pagehide', () => { browserFeatures.clearSecrets(); state.password = null; });
 

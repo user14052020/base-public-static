@@ -86,7 +86,7 @@ const loadApp = () => {
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
     globalThis.testApp = { state, normalizeWork, aggregateReport, backupPayload, dbFromCollections,
       reviveMongo, updDocument, invoiceDocument, actDocument, updateWorkTotals, renderWorkForm, saveWorkFromForm, shell,
-      filteredWorks, renderWorks, renderWorkResults, printableShell, amountToWords, personShortName, sanitizeDocumentPart, element: app };
+      filteredWorks, renderWorks, renderWorkResults, printableShell, amountToWords, personShortName, sanitizeDocumentPart, openSettlementDocument, element: app };
   })();`), context);
   return { ...context.testApp, listeners, window: context.window, document: context.document };
 };
@@ -162,6 +162,26 @@ test('shared pages do not display the obsolete published-backup banner', () => {
   assert.ok(!page.includes('Опубликован новый бекап'));
   assert.ok(!page.includes('Загрузить опубликованные данные'));
   assert.equal(app.state.db.meta.seedRevision, 'older');
+});
+
+test('statement printing uses an isolated preview iframe without depending on browser popups', () => {
+  const app = loadApp();
+  const frame = {};
+  const listeners = {};
+  let attached = false;
+  let shown = false;
+  let removed = false;
+  const dialog = { setAttribute: () => {}, querySelector: (selector) => selector === 'iframe' ? frame : { addEventListener: (event, handler) => { listeners.click = handler; } },
+    addEventListener: (event, handler) => { listeners[event] = handler; }, showModal: () => { shown = true; },
+    close: () => listeners.close(), remove: () => { removed = true; } };
+  app.document.createElement = (tag) => { assert.equal(tag, 'dialog'); return dialog; };
+  app.document.body = { appendChild: (element) => { assert.equal(element, dialog); attached = true; } };
+  app.openSettlementDocument('<html>printable statement</html>');
+  assert.equal(frame.srcdoc, '<html>printable statement</html>');
+  assert.equal(attached, true);
+  assert.equal(shown, true);
+  listeners.click();
+  assert.equal(removed, true);
 });
 
 test('backup round trips preserve automatic and manual UPD amounts', () => {

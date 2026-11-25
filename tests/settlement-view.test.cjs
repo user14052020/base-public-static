@@ -44,6 +44,11 @@ test('long statements have explicit A4 pages, repeated headers and balance carry
 test('missing payment dates block PDF generation instead of silently overstating a debt', () => {
   const db = data(); db.works[0].paymentDate = null; db.works[0].isPayed = true;
   assert.throws(() => buildDocument({ report: statement(db), organization: db.organizations[0], client: db.clients[0], date: '2026-11-25' }, helpers), /Исправьте/);
+  const view = create({ ...helpers, getDb: () => db, today: () => '2026-11-25', paymentDateText: (value) => value, render: () => {} });
+  assert.match(view.render(), /Сальдо предварительное/);
+  view.handleAction('settlement-client', { dataset: { id: 'client' } });
+  assert.match(view.render(), /Предварительное сальдо/);
+  assert.match(view.render(), /data-action="print-settlement" disabled/);
 });
 
 test('the browser view supports client overview, manual opening, printing, and preserves the database', () => {
