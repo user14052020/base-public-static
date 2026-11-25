@@ -47,7 +47,7 @@
         </table>
         ${last ? `<div class="settlement-print-footer">
           <section><b>По данным ${html(seller)}</b><p>${debt()}</p></section>
-          <section><b>По данным ${html(buyer)}</b><p>${mirror ? debt() : '________________________________________________________________'}</p></section>
+          <section><b>По данным ${html(buyer)}</b>${mirror ? `<p>${debt()}</p>` : '<p class="settlement-counterpart-blank"></p>'}</section>
           <section><b>От ${html(seller)}</b><p class="settlement-signature">________________ / ${html(personShortName(organization.signerName || organization.shortName || (/^ИП\s/iu.test(seller) ? seller : '')))} /</p><p>М.П.</p></section>
           <section><b>От ${html(buyer)}</b><p class="settlement-signature">________________ / ${html(personShortName(client.signerName || ''))} /</p><p>М.П.</p></section>
         </div>` : ''}
@@ -63,8 +63,9 @@
       .settlement-print-table { margin-top:4mm; }
       .settlement-print-table th, .settlement-print-table td { border:0.5px solid #111; padding:1.3mm 1mm; font-size:8pt; line-height:1.2; overflow-wrap:anywhere; vertical-align:middle; }
       .settlement-print-table th { font-size:8pt; }
-      .settlement-print-footer { display:grid; grid-template-columns:1fr 1fr; gap:7mm; margin-top:6mm; overflow-wrap:anywhere; }
+      .settlement-print-footer { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7mm; margin-top:6mm; overflow-wrap:anywhere; }
       .settlement-print-footer p { margin-top:2mm; }
+      .settlement-counterpart-blank { min-height:9mm; width:100%; border-bottom:0.5px solid #111; }
       .settlement-print-footer .settlement-signature { margin-top:10mm; }
       .settlement-page-number { position:absolute; bottom:7mm; right:10mm; font-size:8pt; }
     ` });

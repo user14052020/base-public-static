@@ -23,6 +23,7 @@ test('the statement follows the two-sided example without inventing counterpart 
   assert.match(doc.body, /Обороты за период/);
   assert.match(doc.body, /задолженность в пользу Seller составляет 25.00/);
   assert.ok(!doc.body.includes('<script>'));
+  assert.ok(!doc.body.includes('_'.repeat(64)));
   assert.match(doc.body, /Buyer &lt;script>/);
   assert.equal((doc.body.match(/УПД № 1 от/g) || []).length, 1);
   const mirrored = buildDocument({ ...options, mirror: true }, helpers);
